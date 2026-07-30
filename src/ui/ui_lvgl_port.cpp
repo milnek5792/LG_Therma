@@ -1,0 +1,320 @@
+// ui_lvgl_port.cpp — LVGL 9 direct mode do RGB double-FB (anti-tear)
+#include "ui_ui_lvgl.h"
+
+#include "board_7b.h"
+#include "gt911.h"
+#include "i2c.h"
+#include "io_extension.h"
+#include "rgb_lcd_port.h"
+#include "touch.h"
+#include "ui_display_mgr.h"
+#include "ui_eez_ntp_label.h"
+#include "ui_eez_signal_leds.h"
+#include "ui_net_sync.h"
+#include "net_wifi_mgr.h"
+#include "ui_eez_ui.h"
+#include "ui_panel_scale.h"
+
+#include <Arduino.h>
+#include <esp_heap_caps.h>
+#include <esp_lcd_panel_ops.h>
+#include <esp_lcd_panel_rgb.h>
+#include <esp_timer.h>
+#include <freertos/semphr.h>
+
+namespace {
+
+esp_lcd_panel_handle_t s_panel = nullptr;
+esp_lcd_touch_handle_t s_touch = nullptr;
+lv_display_t* s_disp = nullptr;
+lv_indev_t* s_indev = nullptr;
+void* s_fb0 = nullptr;
+void* s_fb1 = nullptr;
+size_t s_fbBytes = 0;
+
+SemaphoreHandle_t s_vsyncSem = nullptr;
+uint32_t s_lastTickMs = 0;
+uint32_t s_flushCount = 0;
+uint32_t s_rgbRestartCount = 0;
+volatile bool s_initDone = false;
+volatile bool s_frozen = false;
+bool s_pointerInput = true;
+bool s_touchArmed = false;
+int s_horRes = 0;
+int s_verRes = 0;
+int16_t s_touchLastX = 0;
+int16_t s_touchLastY = 0;
+
+bool onVsync(esp_lcd_panel_handle_t panel, const esp_lcd_rgb_panel_event_data_t* edata, void* user_ctx) {
+  (void)panel;
+  (void)edata;
+  (void)user_ctx;
+  BaseType_t hp = pdFALSE;
+  if (s_vsyncSem) {
+    xSemaphoreGiveFromISR(s_vsyncSem, &hp);
+  }
+  return hp == pdTRUE;
+}
+
+void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* pxMap) {
+  (void)area;
+  esp_lcd_panel_handle_t panel =
+      static_cast<esp_lcd_panel_handle_t>(lv_display_get_user_data(disp));
+
+  // DIRECT/FULL zero-copy: pxMap = adresu RGB framebufferu.
+  // Bez draw_bitmap panel nepřepne buffer → tear / problikávání.
+  if (panel && lv_display_flush_is_last(disp) && pxMap) {
+    esp_lcd_panel_draw_bitmap(
+        panel, 0, 0, BOARD_PANEL_W, BOARD_PANEL_H, pxMap);
+    if (s_touchArmed && s_vsyncSem) {
+      xSemaphoreTake(s_vsyncSem, 0);
+      // Čekej na VSYNC (max ~2 snímky @ ~30–60 Hz)
+      xSemaphoreTake(s_vsyncSem, pdMS_TO_TICKS(40));
+    }
+  }
+
+  ++s_flushCount;
+  lv_display_flush_ready(disp);
+}
+
+void touchDrain() {
+  if (!s_touch) {
+    return;
+  }
+  for (int i = 0; i < 8; ++i) {
+    esp_lcd_touch_read_data(s_touch);
+    uint16_t x[1], y[1], s[1];
+    uint8_t n = 0;
+    esp_lcd_touch_get_coordinates(s_touch, x, y, s, &n, 1);
+  }
+}
+
+void touchRead(lv_indev_t* indev, lv_indev_data_t* data) {
+  (void)indev;
+
+  if (!s_touch || !s_pointerInput || !s_touchArmed) {
+    data->state = LV_INDEV_STATE_RELEASED;
+    data->point.x = s_touchLastX;
+    data->point.y = s_touchLastY;
+    return;
+  }
+
+  esp_lcd_touch_read_data(s_touch);
+  uint16_t x[1] = {0};
+  uint16_t y[1] = {0};
+  uint16_t strength[1] = {0};
+  uint8_t count = 0;
+  const bool pressed =
+      esp_lcd_touch_get_coordinates(s_touch, x, y, strength, &count, 1) && count > 0;
+
+  if (pressed) {
+    int16_t px = (int16_t)x[0];
+    int16_t py = (int16_t)y[0];
+    if (px < 0) px = 0;
+    if (py < 0) py = 0;
+    if (px >= BOARD_PANEL_W) px = BOARD_PANEL_W - 1;
+    if (py >= BOARD_PANEL_H) py = BOARD_PANEL_H - 1;
+    s_touchLastX = px;
+    s_touchLastY = py;
+    if (uiDisplayHandleTouchWhileAsleep(true)) {
+      data->state = LV_INDEV_STATE_RELEASED;
+    } else {
+      data->state = LV_INDEV_STATE_PRESSED;
+      uiDisplayNoteActivity();
+    }
+  } else {
+    (void)uiDisplayHandleTouchWhileAsleep(false);
+    data->state = LV_INDEV_STATE_RELEASED;
+  }
+  data->point.x = s_touchLastX;
+  data->point.y = s_touchLastY;
+}
+
+}  // namespace
+
+void uiLvglInit() {
+  ESP_LOGI("LVGL", "direct-FB bring-up %dx%d", BOARD_PANEL_W, BOARD_PANEL_H);
+
+  DEV_I2C_Init();
+  IO_EXTENSION_Init();
+  IO_EXTENSION_Output(IO_EXTENSION_IO_5, 0);  // native USB CDC (ne CAN)
+  IO_EXTENSION_Output(IO_EXTENSION_IO_3, 0);
+  delay(20);
+  IO_EXTENSION_Output(IO_EXTENSION_IO_3, 1);
+  delay(20);
+
+  s_panel = waveshare_esp32_s3_rgb_lcd_init();
+  if (!s_panel) {
+    ESP_LOGE("LVGL", "RGB LCD init FAILED");
+    return;
+  }
+  uiDisplayInit();
+
+  waveshare_get_frame_buffer(&s_fb0, &s_fb1);
+  if (!s_fb0 || !s_fb1) {
+    ESP_LOGE("LVGL", "framebuffers missing");
+    return;
+  }
+  s_fbBytes = (size_t)BOARD_PANEL_W * (size_t)BOARD_PANEL_H * sizeof(uint16_t);
+  memset(s_fb0, 0x10, s_fbBytes);
+  memset(s_fb1, 0x10, s_fbBytes);
+
+  s_vsyncSem = xSemaphoreCreateBinary();
+  esp_lcd_rgb_panel_event_callbacks_t cbs = {};
+  cbs.on_vsync = onVsync;
+  ESP_ERROR_CHECK(esp_lcd_rgb_panel_register_event_callbacks(s_panel, &cbs, nullptr));
+
+#if LG_THERMA_ENABLE_TOUCH
+  s_touch = touch_gt911_init();
+  touchDrain();
+  uiDisplayBindTouch(s_touch);
+#else
+  s_touch = nullptr;
+#endif
+
+  lv_init();
+
+  s_disp = lv_display_create(BOARD_PANEL_W, BOARD_PANEL_H);
+  lv_display_set_default(s_disp);
+  lv_display_set_user_data(s_disp, s_panel);
+  lv_display_set_flush_cb(s_disp, dispFlush);
+  lv_display_set_color_format(s_disp, LV_COLOR_FORMAT_RGB565);
+  // DIRECT + double FB + draw_bitmap swap = anti-tear (Espressif/Waveshare)
+  lv_display_set_buffers(
+      s_disp, s_fb0, s_fb1, (uint32_t)s_fbBytes, LV_DISPLAY_RENDER_MODE_DIRECT);
+
+  s_indev = lv_indev_create();
+  lv_indev_set_type(s_indev, LV_INDEV_TYPE_POINTER);
+  lv_indev_set_display(s_indev, s_disp);
+  lv_indev_set_read_cb(s_indev, touchRead);
+  lv_indev_set_scroll_limit(s_indev, 25);
+  lv_indev_enable(s_indev, true);
+
+#if LG_THERMA_SIMPLE_UI
+  lv_obj_t* scr = lv_screen_active();
+  lv_obj_set_style_bg_color(scr, lv_color_hex(0x121214), 0);
+  lv_obj_t* label = lv_label_create(scr);
+  lv_label_set_text(label, "LG Therma 7B direct");
+  lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), 0);
+  lv_obj_center(label);
+#else
+  ESP_LOGI("LVGL", "ui_init...");
+  ui_init();
+  uiEezInitSignalLeds();
+  uiEezNtpLabelInit();
+  uiLvglSetPointerInput(true);
+#endif
+
+  s_lastTickMs = millis();
+  lv_obj_invalidate(lv_screen_active());
+  const uint32_t warmStart = millis();
+  while (millis() - warmStart < 400) {
+    lv_tick_inc(5);
+    lv_timer_handler();
+    delay(5);
+  }
+  touchDrain();
+  if (s_indev) {
+    lv_indev_reset(s_indev, nullptr);
+  }
+  s_touchArmed = true;
+
+  s_horRes = BOARD_PANEL_W;
+  s_verRes = BOARD_PANEL_H;
+  s_initDone = true;
+
+  uiNetStartTask();  // Wi-Fi/NTP na druhém jádře — mimo LVGL flush
+  ESP_LOGI("LVGL", "init done direct-FB + net task");
+}
+
+bool uiLvglInitDone() { return s_initDone; }
+
+void uiLvglSetFrozen(bool frozen) {
+  if (s_frozen == frozen) {
+    return;
+  }
+  s_frozen = frozen;
+  // Bez full invalidate — po BLE/MQTT to blikne celá obrazovka
+}
+
+bool uiLvglIsFrozen() { return s_frozen; }
+void uiLvglSetSdioLight(bool on) { (void)on; }
+
+void uiLvglBeginFullPaint(uint32_t holdMs) {
+  (void)holdMs;
+  if (s_initDone) {
+    lv_obj_t* scr = lv_screen_active();
+    if (scr) {
+      lv_obj_invalidate(scr);
+    }
+  }
+}
+
+bool uiLvglIsFullPaint(void) { return false; }
+
+void uiLvglSetPointerInput(bool enabled) {
+  s_pointerInput = enabled;
+  if (s_indev) {
+    lv_indev_enable(s_indev, enabled);
+  }
+}
+
+bool uiLvglPointerInputEnabled() { return s_pointerInput; }
+uint32_t uiLvglFlushCount() { return s_flushCount; }
+uint32_t uiLvglRgbRestartCount() { return s_rgbRestartCount; }
+
+void uiLvglRgbRecover(const char* reason) {
+  if (!s_panel) {
+    return;
+  }
+  const esp_err_t err = esp_lcd_rgb_panel_restart(s_panel);
+  ++s_rgbRestartCount;
+  ESP_LOGI("LVGL", "RGB DMA restart #%u reason=%s err=%s",
+           (unsigned)s_rgbRestartCount,
+           reason ? reason : "?",
+           esp_err_to_name(err));
+}
+
+void uiLvglSetRgbLowBandwidth(bool low) {
+  // Runtime set_pclk způsobuje celoplosný glitch — PCLK je pevně 12 MHz
+  (void)low;
+}
+
+int uiLvglHorRes() { return s_horRes; }
+int uiLvglVerRes() { return s_verRes; }
+
+void uiLvglTick() {
+  if (!s_initDone) {
+    return;
+  }
+
+  uiDisplayTick();
+
+  if (s_frozen) {
+    const uint32_t now = millis();
+    if (now != s_lastTickMs) {
+      lv_tick_inc(now - s_lastTickMs);
+      s_lastTickMs = now;
+    }
+    return;
+  }
+  const uint32_t now = millis();
+  if (now != s_lastTickMs) {
+    lv_tick_inc(now - s_lastTickMs);
+    s_lastTickMs = now;
+  }
+
+  lv_timer_handler();
+
+  if (uiDisplayIsAsleep()) {
+    return;
+  }
+#if !LG_THERMA_SIMPLE_UI
+  ui_tick();
+  uiNetSyncWifi();
+  if (!netWifiIsBusy()) {
+    uiEezApplySignalLeds();
+    uiEezNtpLabelTick();
+  }
+#endif
+}
