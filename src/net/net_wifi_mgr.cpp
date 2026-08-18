@@ -34,6 +34,9 @@ char s_credPass[65] = "";
 constexpr unsigned long kConnectTimeoutMs = 30000;
 constexpr unsigned long kArmSettleMs = 300;
 constexpr unsigned long kConnectGraceMs = 800;  // ignoruj stale WL_CONNECTED po begin
+constexpr unsigned long kRetryAfterFailMs = 15000;
+constexpr unsigned long kRetryAfterIdleMs = 5000;
+unsigned long s_lastRetryMs = 0;
 
 void setStatus(const char* text) {
   strncpy(s_status, text ? text : "", sizeof(s_status));
@@ -151,8 +154,14 @@ void checkConnectFailures() {
 void netWifiInit() {
   storageInit();
 
+  const bool hasCreds = loadCredentials();
   s_enabled = storageLoadWifiEnabled();
-  loadCredentials();
+  // Po flashi / prázdné NVS: když jsou credentials, Wi‑Fi zapni automaticky
+  if (!s_enabled && hasCreds) {
+    s_enabled = true;
+    storageSaveWifiEnabled(true);
+    Serial.println("[NET] Wi-Fi auto-enable (creds v NVS)");
+  }
 
   if (s_enabled) {
     WiFi.persistent(false);
@@ -160,11 +169,15 @@ void netWifiInit() {
     WiFi.mode(WIFI_STA);
     setStatus("Pripraveno");
     s_phase = WifiPhase::kIdle;
+    s_lastRetryMs = 0;
 
     if (WiFi.status() == WL_CONNECTED && hasValidIp()) {
       refreshConnectedState();
-    } else if (netWifiHasCredentials()) {
+    } else if (hasCreds) {
       armConnect();
+    } else {
+      setStatus("Nastavte sit v menu");
+      s_phase = WifiPhase::kFailed;
     }
   } else {
     WiFi.mode(WIFI_OFF);
@@ -173,9 +186,8 @@ void netWifiInit() {
     clearRuntimeNetworkInfo();
   }
 
-  storageSaveWifiEnabled(s_enabled);
-  Serial.printf("[NET] Wi-Fi init enabled=%d creds=%d\n",
-                (int)s_enabled, (int)netWifiHasCredentials());
+  Serial.printf("[NET] Wi-Fi init enabled=%d creds=%d phase=%d\n",
+                (int)s_enabled, (int)hasCreds, (int)s_phase);
 }
 
 void netWifiSetEnabled(bool on) {
@@ -336,7 +348,27 @@ void netWifiTick() {
       s_phase = WifiPhase::kIdle;
       setStatus("Odpojeno");
       clearRuntimeNetworkInfo();
-      Serial.println("[NET] Wi-Fi ztraceno");
+      s_lastRetryMs = millis();
+      Serial.println("[NET] Wi-Fi ztraceno — retry brzy");
     }
+  }
+
+  // Auto-reconnect po fail / idle (jinak po rebootu / výpadku zůstane viset)
+  if (s_phase == WifiPhase::kFailed || s_phase == WifiPhase::kIdle) {
+    if (!loadCredentials()) {
+      return;
+    }
+    const unsigned long waitMs =
+        (s_phase == WifiPhase::kFailed) ? kRetryAfterFailMs : kRetryAfterIdleMs;
+    if (s_lastRetryMs == 0) {
+      s_lastRetryMs = millis();
+      return;
+    }
+    if (millis() - s_lastRetryMs < waitMs) {
+      return;
+    }
+    s_lastRetryMs = millis();
+    Serial.printf("[NET] Wi-Fi auto-retry (phase=%d)\n", (int)s_phase);
+    armConnect();
   }
 }

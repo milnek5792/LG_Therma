@@ -93,6 +93,7 @@ void uiNetSyncWifi(void) {
 
   uiEez.set_mqtt_enabled = netMqttIsEnabled();
   uiEez.sig_mqtt = netMqttIsConnected();
+  uiEez.sig_remote = netMqttIsWatchActive();
   copyIfChanged(uiEez.set_mqtt_status, sizeof(uiEez.set_mqtt_status), netMqttStatus());
   copyIfChanged(uiEez.set_mqtt_host, sizeof(uiEez.set_mqtt_host), netMqttHost());
 

@@ -37,8 +37,8 @@ void lgModelInit() {
   lgModelMu = xSemaphoreCreateRecursiveMutex();
   // 7B HMI: SOLO zap — UI smí TX (bez wall controlleru)
   soloRezimTab5 = true;
-  mCilova = 42;
-  novaCilovaTeplota = 42;
+  mCilova = 0;
+  novaCilovaTeplota = 0;
 }
 
 void lgModelLock() {
@@ -72,6 +72,9 @@ uint8_t lgModelA0Bajt(uint8_t idx, uint8_t vychozi) {
 }
 
 bool lgMaCerstoA0(uint32_t maxAgeMs) {
+  if (maxAgeMs == 0) {
+    maxAgeMs = LG_A0_FRESH_MS;
+  }
   lgModelLock();
   const unsigned long t = s_casPosledniA0Ms;
   lgModelUnlock();

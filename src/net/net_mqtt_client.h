@@ -14,6 +14,8 @@ bool netMqttIsEnabled(void);
 void netMqttConnect(void);
 bool netMqttIsConnected(void);
 bool netMqttIsBusy(void);
+/** true = aktivní cmd/watch (někdo sleduje v appce). */
+bool netMqttIsWatchActive(void);
 /** Odpoj MQTT před WIFI_OFF / BLE (bez smazání wantConnect). */
 void netMqttDisconnectQuiet(void);
 const char* netMqttStatus(void);

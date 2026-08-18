@@ -1,6 +1,7 @@
 // ui_eez_model.cpp — EEZ model + sync z LIN
 #include "ui_eez_model.h"
 
+#include "bus_lg_config.h"
 #include "bus_lg_model.h"
 #include "bus_lg_protocol.h"
 
@@ -22,7 +23,7 @@ float uiTeplotaC(uint8_t b, bool platna) {
 
 void uiEezInit() {
   memset(&uiEez, 0, sizeof(uiEez));
-  uiEez.teplota_vody_set = 42.0f;
+  uiEez.teplota_vody_set = UI_TEPLOTA_NEPLATNA;
   uiEez.teplota_vody_vstup = UI_TEPLOTA_NEPLATNA;
   uiEez.teplota_vody_vystup = UI_TEPLOTA_NEPLATNA;
   uiEez.teplota_vnitrni = UI_TEPLOTA_NEPLATNA;
@@ -33,6 +34,7 @@ void uiEezInit() {
   uiEez.sig_wifi = false;
   uiEez.sig_mqtt = false;
   uiEez.sig_ble = false;
+  uiEez.sig_remote = false;
   strncpy(uiEez.cas_text, "--:--", sizeof(uiEez.cas_text));
   strncpy(uiEez.datum_text, "--.--.----", sizeof(uiEez.datum_text));
   uiEez.cas_platny = false;
@@ -70,20 +72,29 @@ void uiEezNastavTeplotuVenkovni(float c) { uiEez.teplota_venkovni = c; }
 void uiEezSyncFromBus() {
   lgModelLock();
 
+  // LIN „live“ — A0 mladší než LG_A0_FRESH_MS (default 1 min)
+  // (lgMaCerstoA0 / A0Bajt berou recursive mutex — OK)
+  const bool maA0 = lgMaCerstoA0();
   uint8_t b2 = lgModelA0Bajt(2);
   uint8_t b3 = lgModelA0Bajt(3);
-  // LIN „live“ jen když A0 přišlo nedávno — jinak vstup/výstup = off
-  const bool maA0 = lgMaCerstoA0(5000);
 
   uint8_t cilova = pozadavekNaZapis ? novaCilovaTeplota : mCilova;
-  if (cilova < 15) {
-    cilova = 40;
+  // A0 B5 ≈ venkovní (ambient); 0 = neplatné
+  const uint8_t venkovni = lgModelA0Bajt(5);
+
+  // Setpoint z LIN (A0 B8), při zápisu z UI dočasně novaCilovaTeplota
+  if (pozadavekNaZapis || maA0) {
+    if (cilova >= 15 && cilova <= 65) {
+      uiEez.teplota_vody_set = static_cast<float>(cilova);
+    }
+  } else if (cilova < 15) {
+    uiEez.teplota_vody_set = UI_TEPLOTA_NEPLATNA;
   }
 
-  // Setpoint držíme z UI / last write — nezávisí na LIN online
-  uiEez.teplota_vody_set = static_cast<float>(cilova);
   uiEez.teplota_vody_vstup = uiTeplotaC(mVstupni, maA0 && mVstupni > 0);
   uiEez.teplota_vody_vystup = uiTeplotaC(mVystupni, maA0 && mVystupni > 0);
+  uiEez.teplota_venkovni =
+      uiTeplotaC(venkovni, maA0 && venkovni > 0 && venkovni < 80);
 
   if (maA0 && mVstupni > 0 && mVystupni > 0) {
     uiEez.teplota_spad = (float)((int)mVystupni - (int)mVstupni);
@@ -100,7 +111,8 @@ void uiEezSyncFromBus() {
   uiEez.sig_chod = drzenyZap;
 
   uiEez.sig_cerpadlo = maA0 && lgJeCerpadloZap(b2);
-  uiEez.sig_kompresor = maA0 && lgJeStabilniBeh(b3);
+  // Kompresor: stabilní 0x0A i rozjezd 0x02 (ne jen StabilniBeh)
+  uiEez.sig_kompresor = maA0 && lgJeKompresorBezi(b3);
   uiEez.sig_el_topeni = maA0 && ((b2 & 0x04) != 0);
   uiEez.sig_odmrazovani = maA0 && ((b3 & 0x04) != 0);
 

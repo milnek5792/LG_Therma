@@ -89,26 +89,22 @@ void provedStartStopToggle() {
   }
 }
 
-void provedTeplotaZmena(int delta) {
-  lgModelLock();
-  uint8_t aktualniCilova = aktualniCilovaTeplota();
-  int nova = (int)aktualniCilova + delta;
+void provedTeplotaAbsolutni(uint8_t nova) {
   if (nova < 15 || nova > 65) {
-    lgModelUnlock();
     return;
   }
-  novaCilovaTeplota = (uint8_t)nova;
-  mCilova = novaCilovaTeplota;
+  lgModelLock();
+  novaCilovaTeplota = nova;
+  mCilova = nova;
   const bool zap = drzenyZapnuty() || stavZapnuto;
   lgModelUnlock();
 
-  uiEez.teplota_vody_set = (float)novaCilovaTeplota;
-  ESP_LOGI(TAG, "setpoint -> %u C zap=%d", (unsigned)novaCilovaTeplota, (int)zap);
+  uiEez.teplota_vody_set = (float)nova;
+  ESP_LOGI(TAG, "setpoint -> %u C zap=%d", (unsigned)nova, (int)zap);
 
-  // SOLO: hned TX — nečekej na další A0 (jinak +- „nefunguje“)
+  // SOLO: hned TX — nečekej na další A0 (jinak +- / MQTT „nefunguje“)
   if (soloRezimTab5) {
     if (lgZapisBezi()) {
-      // Fronta: pošli po dokončení aktuálního zápisu přes A0 hook
       pozadavekNaZapis = true;
       pozadavekZmenaStartu = false;
       ESP_LOGI(TAG, "setpoint odlozen — zapis bezi");
@@ -116,12 +112,64 @@ void provedTeplotaZmena(int delta) {
     }
     pozadavekNaZapis = false;
     pozadavekZmenaStartu = false;
-    provedZapisTeploty(novaCilovaTeplota, zap, false);
+    provedZapisTeploty(nova, zap, false);
     return;
   }
 
   pozadavekNaZapis = true;
   pozadavekZmenaStartu = false;
+}
+
+void provedTeplotaZmena(int delta) {
+  lgModelLock();
+  const uint8_t aktualniCilova = aktualniCilovaTeplota();
+  const int nova = (int)aktualniCilova + delta;
+  lgModelUnlock();
+  if (nova < 15 || nova > 65) {
+    return;
+  }
+  provedTeplotaAbsolutni((uint8_t)nova);
+}
+
+enum class PendingCmd : uint8_t {
+  None = 0,
+  Start,
+  Stop,
+  SetAbs,
+  Adjust,
+};
+
+volatile PendingCmd s_pending = PendingCmd::None;
+volatile int s_pendingVal = 0;
+
+void applyPendingFromMqtt() {
+  const PendingCmd cmd = s_pending;
+  if (cmd == PendingCmd::None) {
+    return;
+  }
+  s_pending = PendingCmd::None;
+  const int val = s_pendingVal;
+
+  switch (cmd) {
+    case PendingCmd::Start:
+      ESP_LOGI(TAG, "MQTT queue → START");
+      provedStart();
+      break;
+    case PendingCmd::Stop:
+      ESP_LOGI(TAG, "MQTT queue → STOP");
+      provedStop();
+      break;
+    case PendingCmd::SetAbs:
+      ESP_LOGI(TAG, "MQTT queue → setpoint %d", val);
+      provedTeplotaAbsolutni((uint8_t)val);
+      break;
+    case PendingCmd::Adjust:
+      ESP_LOGI(TAG, "MQTT queue → adjust %+d", val);
+      provedTeplotaZmena(val);
+      break;
+    default:
+      break;
+  }
 }
 
 }  // namespace
@@ -148,6 +196,30 @@ void uiBusHandleAkce(UiAkceTlacitko akce) {
   }
 }
 
+void uiBusSetSetpointC(uint8_t teplotaC) {
+  provedTeplotaAbsolutni(teplotaC);
+}
+
+void uiBusAdjustSetpoint(int deltaC) {
+  provedTeplotaZmena(deltaC);
+}
+
+void uiBusQueuePower(bool start) {
+  s_pendingVal = 0;
+  s_pending = start ? PendingCmd::Start : PendingCmd::Stop;
+}
+
+void uiBusQueueSetpointC(uint8_t teplotaC) {
+  s_pendingVal = (int)teplotaC;
+  s_pending = PendingCmd::SetAbs;
+}
+
+void uiBusQueueAdjustSetpoint(int deltaC) {
+  s_pendingVal = deltaC;
+  s_pending = PendingCmd::Adjust;
+}
+
 void uiBusBindingsTick(void) {
+  applyPendingFromMqtt();
   uiEezSyncFromBus();
 }

@@ -13,6 +13,15 @@ inline bool lgJeStabilniBeh(uint8_t b3) { return lgJeZapnuto(b3) && (b3 & LG_BIT
 inline bool lgJeCerpadloZap(uint8_t b2) { return (b2 & 0x02) != 0; }
 inline bool lgJePrestartB3(uint8_t b3) { return b3 == 0x08; }
 
+/** Kompresor běží / rozjezd — ne jen B3=0x0A (často zůstává B3=0x02). */
+inline bool lgJeKompresorBezi(uint8_t b3) {
+  if (lgJeStabilniBeh(b3)) {
+    return true;
+  }
+  // ROZJEZD / provoz: bit ZAPNUTO, ne čistý PRESTART (0x08)
+  return lgJeZapnuto(b3) && !lgJePrestartB3(b3);
+}
+
 inline bool lgJeTcProvoz(uint8_t b2, uint8_t b3) {
   return lgJeCerpadloZap(b2) || lgJePrestartB3(b3) || lgJeZapnuto(b3) || lgJeStabilniBeh(b3);
 }

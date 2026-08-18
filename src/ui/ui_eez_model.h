@@ -68,6 +68,7 @@ enum UiAkceTlacitko : uint8_t {
 #define EEZ_VAR_SIG_WIFI             "sig_wifi"
 #define EEZ_VAR_SIG_MQTT             "sig_mqtt"
 #define EEZ_VAR_SIG_BLE              "sig_ble"         // navrh: BLE senzor OK
+#define EEZ_VAR_SIG_REMOTE           "sig_remote"      // bool — někdo sleduje (MQTT watch)
 #define EEZ_VAR_SIG_UTLUM            "sig_utlum"       // bool — tichy rezim T/C (planovany v noci)
 #define EEZ_VAR_SIG_ALARM            "sig_alarm"       // navrh: chyba / porucha
 
@@ -97,6 +98,7 @@ struct UiEezModel {
   bool sig_wifi;
   bool sig_mqtt;
   bool sig_ble;
+  bool sig_remote;
   volatile bool sig_utlum;
   bool sig_alarm;
 

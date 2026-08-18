@@ -915,7 +915,11 @@ void tick_screen_main() {
             lv_label_set_text(objects.lbl_vnitrni_value, new_val);
             tick_value_change_obj = NULL;
         }
-        const uint32_t col = (strcmp(new_val, "off") == 0) ? 0x8e8e93u : 0xffffffu;
+        const uint32_t col =
+            (strcmp(new_val, "___") == 0 || strcmp(new_val, "off") == 0 ||
+             strcmp(new_val, "---") == 0)
+                ? 0x8e8e93u
+                : 0xffffffu;
         static uint32_t last_col = 0xFFFFFFFFu;
         if (col != last_col) {
             last_col = col;
@@ -931,7 +935,11 @@ void tick_screen_main() {
             lv_label_set_text(objects.lbl_venkovni_value, new_val);
             tick_value_change_obj = NULL;
         }
-        const uint32_t col = (strcmp(new_val, "off") == 0) ? 0x8e8e93u : 0x64d2ffu;
+        const uint32_t col =
+            (strcmp(new_val, "___") == 0 || strcmp(new_val, "off") == 0 ||
+             strcmp(new_val, "---") == 0)
+                ? 0x8e8e93u
+                : 0x64d2ffu;
         static uint32_t last_col = 0xFFFFFFFFu;
         if (col != last_col) {
             last_col = col;
@@ -947,7 +955,11 @@ void tick_screen_main() {
             lv_label_set_text(objects.lbl_vstup_value, new_val);
             tick_value_change_obj = NULL;
         }
-        const uint32_t col = (strcmp(new_val, "off") == 0) ? 0x8e8e93u : 0xffffffu;
+        const uint32_t col =
+            (strcmp(new_val, "___") == 0 || strcmp(new_val, "off") == 0 ||
+             strcmp(new_val, "---") == 0)
+                ? 0x8e8e93u
+                : 0xffffffu;
         static uint32_t last_col = 0xFFFFFFFFu;
         if (col != last_col) {
             last_col = col;
@@ -963,7 +975,11 @@ void tick_screen_main() {
             lv_label_set_text(objects.lbl_vystup_value, new_val);
             tick_value_change_obj = NULL;
         }
-        const uint32_t col = (strcmp(new_val, "off") == 0) ? 0x8e8e93u : 0xffffffu;
+        const uint32_t col =
+            (strcmp(new_val, "___") == 0 || strcmp(new_val, "off") == 0 ||
+             strcmp(new_val, "---") == 0)
+                ? 0x8e8e93u
+                : 0xffffffu;
         static uint32_t last_col = 0xFFFFFFFFu;
         if (col != last_col) {
             last_col = col;

@@ -137,7 +137,7 @@ void uiLvglInit() {
 
   DEV_I2C_Init();
   IO_EXTENSION_Init();
-  IO_EXTENSION_Output(IO_EXTENSION_IO_5, 0);  // native USB CDC (ne CAN)
+  IO_EXTENSION_Output(IO_EXTENSION_IO_5, 0);  // držet native USB (ne CAN)
   IO_EXTENSION_Output(IO_EXTENSION_IO_3, 0);
   delay(20);
   IO_EXTENSION_Output(IO_EXTENSION_IO_3, 1);

@@ -33,38 +33,59 @@
 #define MQTT_TOPIC_TELE_TEMP_INLET   MQTT_BASE "/tele/temp_inlet"
 #define MQTT_TOPIC_TELE_TEMP_OUTLET  MQTT_BASE "/tele/temp_outlet"
 #define MQTT_TOPIC_TELE_TEMP_SET     MQTT_BASE "/tele/temp_set"
-#define MQTT_TOPIC_TELE_DELTA_T      MQTT_BASE "/tele/delta_t"
 #define MQTT_TOPIC_TELE_POWER        MQTT_BASE "/tele/power"
 #define MQTT_TOPIC_TELE_PUMP         MQTT_BASE "/tele/pump"
 #define MQTT_TOPIC_TELE_COMPRESSOR   MQTT_BASE "/tele/compressor"
-#define MQTT_TOPIC_TELE_ELEC_HEAT    MQTT_BASE "/tele/elec_heat"
-#define MQTT_TOPIC_TELE_DEFROST      MQTT_BASE "/tele/defrost"
-#define MQTT_TOPIC_TELE_QUIET        MQTT_BASE "/tele/quiet"
-#define MQTT_TOPIC_TELE_MODE         MQTT_BASE "/tele/mode"
+#define MQTT_TOPIC_TELE_LIN          MQTT_BASE "/tele/lin"
+#define MQTT_TOPIC_TELE_WATCH        MQTT_BASE "/tele/watch"
 #define MQTT_TOPIC_TELE_ALARM        MQTT_BASE "/tele/alarm"
-#define MQTT_TOPIC_TELE_WIFI         MQTT_BASE "/tele/wifi"
 
 #define MQTT_TOPIC_CMD_POWER    MQTT_BASE "/cmd/power"
 #define MQTT_TOPIC_CMD_SETPOINT MQTT_BASE "/cmd/setpoint"
 #define MQTT_TOPIC_CMD_MODE     MQTT_BASE "/cmd/mode"
-#define MQTT_TOPIC_CMD_QUIET    MQTT_BASE "/cmd/quiet"
+/** 1 = tele/compressor vždy ON (test MQTT → mobil). Po ověření dej 0. */
+#ifndef MQTT_COMPRESSOR_FORCE_ON
+#define MQTT_COMPRESSOR_FORCE_ON 0
+#endif
+
+/**
+ * Test: ON = simuluj běžící kompresor na tele/compressor; OFF = zpět na bus.
+ */
+#define MQTT_TOPIC_CMD_COMPRESSOR MQTT_BASE "/cmd/compressor"
+/**
+ * Mobil → zařízení: ON = telemetrie (doporučeně retain=true při otevření panelu).
+ * OFF = stop tele (retain u OFF raději vypnout, ať po reconnectu nezůstane „OFF“).
+ */
 #define MQTT_TOPIC_CMD_WATCH    MQTT_BASE "/cmd/watch"
 
 #ifndef MQTT_TELE_ENABLE
 #define MQTT_TELE_ENABLE 1
 #endif
 
-// Po connect: 3 testovací do temp_outlet (retain), pak sync ostatních
-#ifndef MQTT_TELE_OUTLET_DEMO
-#define MQTT_TELE_OUTLET_DEMO 1
+/** 1 = tele jen při aktivním watch (cmd/watch + idle timeout). */
+#ifndef MQTT_TELE_REQUIRE_WATCH
+#define MQTT_TELE_REQUIRE_WATCH 1
 #endif
 
-// Pauza mezi publish při connect sync (ms)
+#ifndef MQTT_WATCH_IDLE_MS
+#define MQTT_WATCH_IDLE_MS (5 * 60 * 1000)
+#endif
+
+/** Interval mezi kroky prvního tele sync po watch ON. */
 #ifndef MQTT_TELE_STEP_MS
-#define MQTT_TELE_STEP_MS 200
+#define MQTT_TELE_STEP_MS 80
 #endif
 
-// 1 = přeskočit ověření certifikátu (první ověření spojení)
+/** Jak často kontrolovat změny tele (ms) — menší = svižnější panel. */
+#ifndef MQTT_TELE_CHANGE_MS
+#define MQTT_TELE_CHANGE_MS 200
+#endif
+
+/** Neplatná teplota v tele/* (místo "off" — IoT Panel / UI). */
+#ifndef MQTT_TELE_NA
+#define MQTT_TELE_NA "___"
+#endif
+
 #ifndef MQTT_TLS_INSECURE
 #define MQTT_TLS_INSECURE 1
 #endif

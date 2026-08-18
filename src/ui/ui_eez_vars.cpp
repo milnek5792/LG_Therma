@@ -20,7 +20,7 @@ static bool tempOffline(float c) {
 
 static const char* fmtTemp(float c) {
   if (tempOffline(c)) {
-    return "---";
+    return "___";
   }
   char* buf = fmtSlot();
   snprintf(buf, 28, "%.1f", c);
@@ -28,9 +28,9 @@ static const char* fmtTemp(float c) {
 }
 
 static const char* fmtTempUnit(float c) {
-  // Offline: jasně odlišené od čísla (°C)
+  // Offline: podtržítka (ne "off")
   if (tempOffline(c)) {
-    return "off";
+    return "___";
   }
   char* buf = fmtSlot();
   snprintf(buf, 28, "%.1f°C", c);
@@ -158,7 +158,8 @@ int32_t get_var_sig_cerpadlo___255___50() {
 }
 
 uint32_t get_var_sig_kompresor___16752394___0x2c2c2e() {
-  return uiEez.sig_kompresor ? 0xFF9F0Au : 0xAEAEB2u;
+  // Stejná zelená jako Wi‑Fi / chod / čerpadlo
+  return uiEez.sig_kompresor ? 0x30D158u : 0xAEAEB2u;
 }
 
 int32_t get_var_sig_kompresor___255___50() {
@@ -166,7 +167,7 @@ int32_t get_var_sig_kompresor___255___50() {
 }
 
 uint32_t get_var_sig_odmrazovani___3199320___0x2c2c2e() {
-  return uiEez.sig_odmrazovani ? 0xFFD60Au : 0xAEAEB2u;
+  return uiEez.sig_odmrazovani ? 0xFF9F0Au : 0xAEAEB2u;
 }
 
 int32_t get_var_sig_odmrazovani___255___50() {
@@ -174,7 +175,7 @@ int32_t get_var_sig_odmrazovani___255___50() {
 }
 
 uint32_t get_var_sig_el_topeni___16752394___0x2c2c2e() {
-  return uiEez.sig_el_topeni ? 0xFFD60Au : 0xAEAEB2u;
+  return uiEez.sig_el_topeni ? 0xFF9F0Au : 0xAEAEB2u;
 }
 
 int32_t get_var_sig_el_topeni___255___50() {

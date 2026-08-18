@@ -1,6 +1,5 @@
-// main.cpp — Waveshare 7B: display + EEZ UI + LIN UART2
+// main.cpp — Waveshare 7B: LIN na UART header + logy na USB-C "USB"
 #include <Arduino.h>
-#include <USB.h>
 #include <cstdarg>
 #include <cstdio>
 #include <esp_heap_caps.h>
@@ -23,8 +22,8 @@ static const char* TAG = "main";
 static bool s_linStarted = false;
 static uint32_t s_bootMs = 0;
 
-// ESP_LOG → TinyUSB Serial (USB-C "USB"). UART0/43-44 necháváme pro LIN.
-static int usbCdcLogVprintf(const char* fmt, va_list args) {
+// ESP_LOG default = UART0 (43/44) = LIN piny. Přesměrovat na USB CDC.
+static int usbLogVprintf(const char* fmt, va_list args) {
   char buf[256];
   const int n = vsnprintf(buf, sizeof(buf), fmt, args);
   if (n > 0) {
@@ -34,41 +33,36 @@ static int usbCdcLogVprintf(const char* fmt, va_list args) {
   return n;
 }
 
-static void boardEnableNativeUsbCdc() {
+/** Waveshare: EXIO5 LOW = USB-C "USB" → ESP native USB; HIGH = CAN. */
+static void boardSelectNativeUsb() {
   DEV_I2C_Init();
-  IO_EXTENSION_Init();  // EXIO5=0 → USB, ne CAN
+  IO_EXTENSION_Init();  // už nastaví EXIO5=0
   IO_EXTENSION_Output(IO_EXTENSION_IO_5, 0);
 }
 
 void setup() {
   esp_brownout_disable();
 
-  // 1) Mux na USB (když je zapojený kabel do "USB")
-  boardEnableNativeUsbCdc();
-  delay(50);
+  // 1) Nejdřív mux USB (jinak Windows na "USB" nic nevidí — default je CAN)
+  boardSelectNativeUsb();
+  delay(100);
 
-  // 2) TinyUSB CDC — monitor jen když je kabel v USB-C "USB"
-  USB.begin();
+  // 2) HWCDC na USB-C "USB" (MODE=1). Nečekat na hosta — jinak boot visí.
   Serial.begin(115200);
-  Serial.setTxTimeoutMs(100);
-  {
-    const uint32_t t0 = millis();
-    while (!Serial && (millis() - t0) < 1500) {
-      delay(10);
-    }
-  }
-  esp_log_set_vprintf(usbCdcLogVprintf);
-  delay(200);
+  Serial.setTxTimeoutMs(0);  // neblokovat, když monitor ještě není
+  delay(300);
+  esp_log_set_vprintf(usbLogVprintf);
 
   Serial.println();
-  Serial.println("=== LG THERMA 7B boot (USB CDC) ===");
-  Serial.flush();
+  Serial.println("=== LG THERMA 7B FW-ID=2026-08-03b ===");
   ESP_LOGI(TAG, "==================================================");
-  ESP_LOGI(TAG, "LG THERMA 7B + LIN");
+  ESP_LOGI(TAG, "LG THERMA 7B FW-ID=2026-08-03b (no cmd/quiet)");
   ESP_LOGI(TAG, "PSRAM size=%u free=%u",
            (unsigned)ESP.getPsramSize(),
            (unsigned)ESP.getFreePsram());
-  ESP_LOGI(TAG, "Upload=CH343 (UART). Monitor=USB-C USB.");
+  ESP_LOGI(TAG, "Upload:  USB-C UART + DIP UART1 (CH343)");
+  ESP_LOGI(TAG, "LIN:     UART header + DIP UART2");
+  ESP_LOGI(TAG, "Monitor: USB-C USB COM (HWCDC), EXIO5=USB");
   ESP_LOGI(TAG, "==================================================");
 
   if (ESP.getPsramSize() == 0) {
@@ -81,6 +75,9 @@ void setup() {
   uiEezInit();
   uiNetInit();
   uiLvglInit();
+
+  // Po LVGL init znovu USB — IO_EXTENSION_Init v display path nesmí nechat CAN
+  IO_EXTENSION_Output(IO_EXTENSION_IO_5, 0);
 
   if (!uiLvglInitDone()) {
     ESP_LOGE(TAG, "LVGL init FAILED — hang");
@@ -121,17 +118,15 @@ void loop() {
   static uint32_t s_lastLoopHb = 0;
   if (now - s_lastLoopHb >= 2000) {
     s_lastLoopHb = now;
-    // Přímý Serial — ať je vidět i když ESP_LOG selže
+    // Držet mux na USB (kdyby něco přepsalo EXIO)
+    IO_EXTENSION_Output(IO_EXTENSION_IO_5, 0);
     Serial.printf("HB ms=%lu lin=%d pkts=%lu\r\n",
                   (unsigned long)now,
                   (int)s_linStarted,
                   s_linStarted ? lgPocetPaketu() : 0UL);
-    Serial.flush();
-    ESP_LOGI(TAG, "HB ms=%lu freeze=%d flush=%u lin_pkts=%lu rx=%lu",
-             (unsigned long)now,
+    ESP_LOGI(TAG, "HB freeze=%d flush=%u rx=%lu",
              (int)uiLvglIsFrozen(),
              (unsigned)uiLvglFlushCount(),
-             s_linStarted ? lgPocetPaketu() : 0UL,
              s_linStarted ? lgPocetRxBajtu() : 0UL);
   }
   delay(3);

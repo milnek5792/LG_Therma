@@ -2,8 +2,9 @@
 #ifndef LG_CONFIG_H
 #define LG_CONFIG_H
 
-// UART header (TTL): RX=44 TX=43 — DIP přepínač na UART2
-// Flash: USB-C "UART" + DIP UART1 (CH343). Logy: USB-C "USB" TinyUSB CDC (EXIO5=0).
+// LIN: UART header RX=44 TX=43, DIP=UART2
+// Upload: USB-C "UART" CH343, DIP=UART1
+// Monitor: USB-C "USB" native CDC (EXIO5=0), nezávislé na DIP
 #ifndef LG_MBUS_RX_PIN
 #define LG_MBUS_RX_PIN 44
 #endif
@@ -18,7 +19,6 @@
 #define LG_BAUDRATE 300
 #endif
 
-// Odposlech v loop() vedle LVGL (ne v net tasku)
 #ifndef LG_LIN_IN_LOOP
 #define LG_LIN_IN_LOOP 1
 #endif
@@ -30,9 +30,13 @@
 #define LG_LIN_START_DELAY_MS 1500
 #endif
 
-// Kratší log A0 (méně spamů na USB CDC)
 #ifndef LG_KRATKY_LOG
 #define LG_KRATKY_LOG 1
+#endif
+
+/** A0 mladší než toto = LIN online (UI + MQTT). Default 1 min. */
+#ifndef LG_A0_FRESH_MS
+#define LG_A0_FRESH_MS 60000u
 #endif
 
 #endif
