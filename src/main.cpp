@@ -6,6 +6,7 @@
 #include <esp_log.h>
 #include <esp_private/brownout.h>
 
+#include "app_version.h"
 #include "bus_lg_config.h"
 #include "bus_lg_lin_api.h"
 #include "bus_lg_model.h"
@@ -54,9 +55,9 @@ void setup() {
   esp_log_set_vprintf(usbLogVprintf);
 
   Serial.println();
-  Serial.println("=== LG THERMA 7B FW-ID=2026-08-03b ===");
+  Serial.printf("=== LG THERMA 7B FW v%s ===\n", APP_FW_VERSION);
   ESP_LOGI(TAG, "==================================================");
-  ESP_LOGI(TAG, "LG THERMA 7B FW-ID=2026-08-03b (no cmd/quiet)");
+  ESP_LOGI(TAG, "LG THERMA 7B FW v%s (no cmd/quiet)", APP_FW_VERSION);
   ESP_LOGI(TAG, "PSRAM size=%u free=%u",
            (unsigned)ESP.getPsramSize(),
            (unsigned)ESP.getFreePsram());

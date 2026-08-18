@@ -16,15 +16,44 @@ extern "C" {
 
 objects_t objects;
 
-//
-// Event handlers
-//
-
 lv_obj_t *tick_value_change_obj;
 
-//
-// Screens
-//
+static lv_obj_t *makeTempUnitLabel(lv_obj_t *parent, uint32_t color) {
+    lv_obj_t *obj = lv_label_create(parent);
+    lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_text_font(obj, &lv_font_montserrat_16, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(obj, lv_color_hex(color), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_label_set_text_static(obj, "°C");
+    return obj;
+}
+
+static void alignTempUnit(lv_obj_t *valueLbl, lv_obj_t *unitLbl) {
+    if (!valueLbl || !unitLbl) {
+        return;
+    }
+    lv_obj_align_to(unitLbl, valueLbl, LV_ALIGN_OUT_RIGHT_TOP, 4, 2);
+}
+
+static void setTempValueAndUnit(lv_obj_t *valueLbl, lv_obj_t *unitLbl, const char *new_val,
+                               uint32_t onlineColor) {
+    const char *cur_val = lv_label_get_text(valueLbl);
+    if (strcmp(new_val, cur_val) != 0) {
+        tick_value_change_obj = valueLbl;
+        lv_label_set_text(valueLbl, new_val);
+        tick_value_change_obj = NULL;
+        alignTempUnit(valueLbl, unitLbl);
+    }
+    const uint32_t col =
+        (strcmp(new_val, "___") == 0 || strcmp(new_val, "off") == 0 ||
+         strcmp(new_val, "---") == 0)
+            ? 0x8e8e93u
+            : onlineColor;
+    lv_obj_set_style_text_color(valueLbl, lv_color_hex(col), LV_PART_MAIN | LV_STATE_DEFAULT);
+    if (unitLbl) {
+        lv_obj_set_style_text_color(unitLbl, lv_color_hex(col), LV_PART_MAIN | LV_STATE_DEFAULT);
+    }
+}
 
 void create_screen_main() {
     // screen_main
@@ -611,6 +640,12 @@ void create_screen_main() {
             lv_label_set_text(obj, "");
         }
         {
+            // lbl_vnitrni_unit
+            lv_obj_t *obj = makeTempUnitLabel(parent_obj, 0xffffffu);
+            objects.lbl_vnitrni_unit = obj;
+            alignTempUnit(objects.lbl_vnitrni_value, obj);
+        }
+        {
             // lbl_venkovni_title
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.lbl_venkovni_title = obj;
@@ -667,6 +702,12 @@ void create_screen_main() {
             lv_label_set_text(obj, "");
         }
         {
+            // lbl_vstup_unit
+            lv_obj_t *obj = makeTempUnitLabel(parent_obj, 0xffffffu);
+            objects.lbl_vstup_unit = obj;
+            alignTempUnit(objects.lbl_vstup_value, obj);
+        }
+        {
             // lbl_vystup_title
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.lbl_vystup_title = obj;
@@ -694,19 +735,26 @@ void create_screen_main() {
             lv_label_set_text(obj, "");
         }
         {
-            // btn_menu — poloviční, tmavě šedé jako spodní panel
+            // lbl_vystup_unit
+            lv_obj_t *obj = makeTempUnitLabel(parent_obj, 0xff9f0au);
+            objects.lbl_vystup_unit = obj;
+            alignTempUnit(objects.lbl_vystup_value, obj);
+        }
+        {
+            // btn_menu — pravý dolní roh, výška = spodní pruh (120 px)
             lv_obj_t *obj = lv_button_create(parent_obj);
             objects.btn_menu = obj;
-            lv_obj_set_pos(obj, 829, 510);
-            lv_obj_set_size(obj, 128, 60);
+            lv_obj_set_pos(obj, 850, 480);
+            lv_obj_set_size(obj, 174, 120);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_PRESS_LOCK);
             lv_obj_add_event_cb(obj, action_akce_menu, LV_EVENT_CLICKED, (void *)0);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_CHAIN);
             lv_obj_remove_flag(obj, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM));
+            add_style_btn_menu(obj);
             lv_obj_set_style_bg_color(obj, lv_color_hex(0x1a1a1f), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_bg_opa(obj, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_radius(obj, 8, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_radius(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_border_width(obj, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_border_color(obj, lv_color_hex(0x24242b), LV_PART_MAIN | LV_STATE_DEFAULT);
             {
@@ -720,7 +768,7 @@ void create_screen_main() {
                     lv_obj_remove_flag(obj, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM));
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_text_font(obj, &lv_font_montserrat_18, LV_PART_MAIN | LV_STATE_DEFAULT);
+                    lv_obj_set_style_text_font(obj, &ui_font_font_cs_24, LV_PART_MAIN | LV_STATE_DEFAULT);
                     lv_obj_set_style_text_color(obj, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
                     lv_label_set_text_static(obj, "MENU");
                 }
@@ -791,6 +839,7 @@ void tick_screen_main() {
             tick_value_change_obj = objects.lbl_setpoint;
             lv_label_set_text(objects.lbl_setpoint, new_val);
             tick_value_change_obj = NULL;
+            alignTempUnit(objects.lbl_setpoint, objects.lbl_setpoint_unit);
         }
     }
     {
@@ -908,24 +957,8 @@ void tick_screen_main() {
         }
     }
     {
-        const char *new_val = get_var_teplota_vnitrni();
-        const char *cur_val = lv_label_get_text(objects.lbl_vnitrni_value);
-        if (strcmp(new_val, cur_val) != 0) {
-            tick_value_change_obj = objects.lbl_vnitrni_value;
-            lv_label_set_text(objects.lbl_vnitrni_value, new_val);
-            tick_value_change_obj = NULL;
-        }
-        const uint32_t col =
-            (strcmp(new_val, "___") == 0 || strcmp(new_val, "off") == 0 ||
-             strcmp(new_val, "---") == 0)
-                ? 0x8e8e93u
-                : 0xffffffu;
-        static uint32_t last_col = 0xFFFFFFFFu;
-        if (col != last_col) {
-            last_col = col;
-            lv_obj_set_style_text_color(objects.lbl_vnitrni_value, lv_color_hex(col),
-                                        LV_PART_MAIN | LV_STATE_DEFAULT);
-        }
+        setTempValueAndUnit(objects.lbl_vnitrni_value, objects.lbl_vnitrni_unit,
+                            get_var_teplota_vnitrni(), 0xffffffu);
     }
     {
         const char *new_val = get_var_teplota_venkovni();
@@ -948,44 +981,12 @@ void tick_screen_main() {
         }
     }
     {
-        const char *new_val = get_var_teplota_vody_vstup();
-        const char *cur_val = lv_label_get_text(objects.lbl_vstup_value);
-        if (strcmp(new_val, cur_val) != 0) {
-            tick_value_change_obj = objects.lbl_vstup_value;
-            lv_label_set_text(objects.lbl_vstup_value, new_val);
-            tick_value_change_obj = NULL;
-        }
-        const uint32_t col =
-            (strcmp(new_val, "___") == 0 || strcmp(new_val, "off") == 0 ||
-             strcmp(new_val, "---") == 0)
-                ? 0x8e8e93u
-                : 0xffffffu;
-        static uint32_t last_col = 0xFFFFFFFFu;
-        if (col != last_col) {
-            last_col = col;
-            lv_obj_set_style_text_color(objects.lbl_vstup_value, lv_color_hex(col),
-                                        LV_PART_MAIN | LV_STATE_DEFAULT);
-        }
+        setTempValueAndUnit(objects.lbl_vstup_value, objects.lbl_vstup_unit,
+                            get_var_teplota_vody_vstup(), 0xffffffu);
     }
     {
-        const char *new_val = get_var_teplota_vody_vystup();
-        const char *cur_val = lv_label_get_text(objects.lbl_vystup_value);
-        if (strcmp(new_val, cur_val) != 0) {
-            tick_value_change_obj = objects.lbl_vystup_value;
-            lv_label_set_text(objects.lbl_vystup_value, new_val);
-            tick_value_change_obj = NULL;
-        }
-        const uint32_t col =
-            (strcmp(new_val, "___") == 0 || strcmp(new_val, "off") == 0 ||
-             strcmp(new_val, "---") == 0)
-                ? 0x8e8e93u
-                : 0xffffffu;
-        static uint32_t last_col = 0xFFFFFFFFu;
-        if (col != last_col) {
-            last_col = col;
-            lv_obj_set_style_text_color(objects.lbl_vystup_value, lv_color_hex(col),
-                                        LV_PART_MAIN | LV_STATE_DEFAULT);
-        }
+        setTempValueAndUnit(objects.lbl_vystup_value, objects.lbl_vystup_unit,
+                            get_var_teplota_vody_vystup(), 0xff9f0au);
     }
 }
 

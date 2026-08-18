@@ -58,12 +58,15 @@ typedef struct _objects_t {
     lv_obj_t *lbl_el_topeni;
     lv_obj_t *lbl_vnitrni_title;
     lv_obj_t *lbl_vnitrni_value;
+    lv_obj_t *lbl_vnitrni_unit;
     lv_obj_t *lbl_venkovni_title;
     lv_obj_t *lbl_venkovni_value;
     lv_obj_t *lbl_vstup_title;
     lv_obj_t *lbl_vstup_value;
+    lv_obj_t *lbl_vstup_unit;
     lv_obj_t *lbl_vystup_title;
     lv_obj_t *lbl_vystup_value;
+    lv_obj_t *lbl_vystup_unit;
     lv_obj_t *btn_menu;
     lv_obj_t *obj5;
 } objects_t;

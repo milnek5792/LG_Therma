@@ -49,6 +49,7 @@ Phase s_phase = Phase::Idle;
 bool s_scanHit = false;
 bool s_nimbleUp = false;
 bool s_forcePoll = false;
+bool s_firstPollPending = true;
 
 bool parseMac(const char* s, uint8_t out[6]) {
   unsigned v[6];
@@ -341,9 +342,10 @@ void bleDeinitSafe() {
 void climateBleInit(void) {
 #if LG_THERMA_BLE_ROOM
   s_macOk = parseMac(BLE_METER_MAC, s_mac);
-  s_lastPollMs = millis();
+  s_lastPollMs = 0;
   s_phase = Phase::Idle;
   s_forcePoll = false;
+  s_firstPollPending = true;
   uiEez.teplota_vnitrni = UI_TEPLOTA_NEPLATNA;
   uiEez.sig_ble = false;
   ESP_LOGI(TAG, "init mac_ok=%d MAC=%s interval=%lus (FSM)",
@@ -405,15 +407,25 @@ void climateBleTick(void) {
       if (netMqttIsBusy()) {
         return;
       }
-      const bool due =
-          s_forcePoll || (now - s_lastPollMs >= BLE_POLL_INTERVAL_MS);
+      // Po restartu nenačítej T hned s Wi-Fi: nejdřív MQTT session, pak první scan.
+      if (s_firstPollPending && !s_forcePoll) {
+        if (netMqttIsEnabled() && !netMqttIsConnected()) {
+          return;
+        }
+      }
+      const bool due = s_forcePoll || s_firstPollPending ||
+                       (s_lastPollMs != 0 &&
+                        (now - s_lastPollMs >= BLE_POLL_INTERVAL_MS));
       if (!due) {
         return;
       }
+      const bool first = s_firstPollPending;
+      s_firstPollPending = false;
       s_forcePoll = false;
       s_lastPollMs = now;
       s_scanHit = false;
-      ESP_LOGI(TAG, "poll BEGIN — MQTT down, WiFi OFF");
+      ESP_LOGI(TAG, "poll BEGIN%s — MQTT down, WiFi OFF",
+               first ? " (first after MQTT)" : "");
       uiLvglSetFrozen(true);
       uiLvglSetRgbLowBandwidth(true);
       // Nejdřív MQTT, ať TLS nepadá uprostřed WIFI_OFF
@@ -422,6 +434,10 @@ void climateBleTick(void) {
         ESP_LOGW(TAG, "suspend fail");
         uiLvglSetRgbLowBandwidth(false);
         uiLvglSetFrozen(false);
+        if (first) {
+          s_firstPollPending = true;
+          s_lastPollMs = 0;
+        }
         return;
       }
       enterPhase(Phase::WifiOffSettle);

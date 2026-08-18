@@ -23,6 +23,15 @@ static const char* fmtTemp(float c) {
     return "___";
   }
   char* buf = fmtSlot();
+  snprintf(buf, 28, "%d", (int)lroundf(c));
+  return buf;
+}
+
+static const char* fmtTempDeci(float c) {
+  if (tempOffline(c)) {
+    return "___";
+  }
+  char* buf = fmtSlot();
   snprintf(buf, 28, "%.1f", c);
   return buf;
 }
@@ -42,13 +51,13 @@ extern "C" {
 const char* get_var_teplota_vody_set() { return fmtTemp(uiEez.teplota_vody_set); }
 void set_var_teplota_vody_set(float value) { uiEez.teplota_vody_set = value; }
 
-const char* get_var_teplota_vody_vstup() { return fmtTempUnit(uiEez.teplota_vody_vstup); }
+const char* get_var_teplota_vody_vstup() { return fmtTemp(uiEez.teplota_vody_vstup); }
 void set_var_teplota_vody_vstup(float value) { uiEez.teplota_vody_vstup = value; }
 
-const char* get_var_teplota_vody_vystup() { return fmtTempUnit(uiEez.teplota_vody_vystup); }
+const char* get_var_teplota_vody_vystup() { return fmtTemp(uiEez.teplota_vody_vystup); }
 void set_var_teplota_vody_vystup(float value) { uiEez.teplota_vody_vystup = value; }
 
-const char* get_var_teplota_vnitrni() { return fmtTempUnit(uiEez.teplota_vnitrni); }
+const char* get_var_teplota_vnitrni() { return fmtTempDeci(uiEez.teplota_vnitrni); }
 void set_var_teplota_vnitrni(float value) { uiEez.teplota_vnitrni = value; }
 
 const char* get_var_teplota_venkovni() { return fmtTempUnit(uiEez.teplota_venkovni); }

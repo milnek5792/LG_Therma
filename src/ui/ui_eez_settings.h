@@ -11,6 +11,7 @@ typedef struct {
   lv_obj_t* screen;
   lv_obj_t* btn_back;
   lv_obj_t* lbl_title;
+  lv_obj_t* lbl_version;
   lv_obj_t* panel_wifi;
   lv_obj_t* lbl_wifi_title;
   lv_obj_t* lbl_wifi_status;
