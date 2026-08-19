@@ -31,11 +31,6 @@ void action_akce_stop(lv_event_t* e) {
   uiEez.akce_tlacitko = UI_AKCE_STOP;
 }
 
-void action_akce_tichy_rezim(lv_event_t* e) {
-  (void)e;
-  uiEez.akce_tlacitko = UI_AKCE_TICHY_REZIM;
-}
-
 void action_akce_menu(lv_event_t* e) {
   (void)e;
   uiEez.akce_tlacitko = UI_AKCE_MENU;
@@ -84,6 +79,16 @@ void action_akce_settings_plan(lv_event_t* e) {
 void action_akce_settings_servis(lv_event_t* e) {
   (void)e;
   uiEez.akce_tlacitko = UI_AKCE_SETTINGS_SERVIS;
+}
+
+void action_akce_plan_back(lv_event_t* e) {
+  (void)e;
+  uiEez.akce_tlacitko = UI_AKCE_PLAN_BACK;
+}
+
+void action_akce_plan_toggle(lv_event_t* e) {
+  (void)e;
+  uiEez.akce_tlacitko = UI_AKCE_PLAN_TOGGLE;
 }
 
 }  // extern "C"

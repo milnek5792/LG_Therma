@@ -38,9 +38,8 @@ void uiEezInit() {
   strncpy(uiEez.cas_text, "--:--", sizeof(uiEez.cas_text));
   strncpy(uiEez.datum_text, "--.--.----", sizeof(uiEez.datum_text));
   uiEez.cas_platny = false;
-  strncpy(uiEez.plan_text,
-          "Pracovní dny (Po–Pá) • Příští změna ve 22:00",
-          sizeof(uiEez.plan_text));
+  strncpy(uiEez.plan_title, "PLAN VYPNUTY", sizeof(uiEez.plan_title));
+  strncpy(uiEez.plan_text, "Casovy plan je neaktivni", sizeof(uiEez.plan_text));
   strncpy(uiEez.set_wifi_ssid, "—", sizeof(uiEez.set_wifi_ssid));
   strncpy(uiEez.set_wifi_ip, "—", sizeof(uiEez.set_wifi_ip));
   strncpy(uiEez.set_wifi_status, "Odpojeno", sizeof(uiEez.set_wifi_status));

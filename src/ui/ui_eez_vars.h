@@ -57,6 +57,8 @@ extern int32_t get_var_akce_tlacitko();
 extern void set_var_akce_tlacitko(int32_t value);
 extern const char *get_var_plan_text();
 extern void set_var_plan_text(const char *value);
+extern const char *get_var_plan_title();
+extern void set_var_plan_title(const char *value);
 
 // EEZ expression getters (barvy / texty signálů)
 extern const char *get_var_sig_wifi____wi_fi__ok_____wi_fi______();

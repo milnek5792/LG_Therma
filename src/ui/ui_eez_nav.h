@@ -12,6 +12,7 @@ void uiNavigateTo(enum ScreensEnum screenId);
 bool uiIsMainScreen();
 bool uiIsSettingsScreen();
 bool uiIsWifiSetupScreen();
+bool uiIsPlanScreen();
 
 #ifdef __cplusplus
 }

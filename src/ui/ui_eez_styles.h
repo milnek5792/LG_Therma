@@ -29,11 +29,6 @@ lv_style_t *get_style_btn_menu_MAIN_DEFAULT();
 void add_style_btn_menu(lv_obj_t *obj);
 void remove_style_btn_menu(lv_obj_t *obj);
 
-// Style: btn_tichy
-lv_style_t *get_style_btn_tichy_MAIN_DEFAULT();
-void add_style_btn_tichy(lv_obj_t *obj);
-void remove_style_btn_tichy(lv_obj_t *obj);
-
 // Style: btn1
 lv_style_t *get_style_btn1_MAIN_DEFAULT();
 void add_style_btn1(lv_obj_t *obj);

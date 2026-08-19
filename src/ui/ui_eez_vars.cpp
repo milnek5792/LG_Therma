@@ -129,6 +129,13 @@ void set_var_plan_text(const char* value) {
   }
 }
 
+const char* get_var_plan_title() { return uiEez.plan_title; }
+void set_var_plan_title(const char* value) {
+  if (value) {
+    snprintf(uiEez.plan_title, sizeof(uiEez.plan_title), "%s", value);
+  }
+}
+
 const char* get_var_sig_wifi____wi_fi__ok_____wi_fi______() {
   if (uiEez.sig_wifi) {
     return "Wi-Fi: OK";

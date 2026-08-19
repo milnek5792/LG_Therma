@@ -14,7 +14,8 @@ enum ScreensEnum {
     SCREEN_ID_MAIN = 1,
     SCREEN_ID_SETTINGS = 2,
     SCREEN_ID_WIFI_SETUP = 3,
-    _SCREEN_ID_LAST = 3
+    SCREEN_ID_PLAN = 4,
+    _SCREEN_ID_LAST = 4
 };
 
 typedef struct _objects_t {
@@ -30,8 +31,6 @@ typedef struct _objects_t {
     lv_obj_t *lbl_cas;
     lv_obj_t *lbl_wifi;
     lv_obj_t *lbl_mqtt;
-    lv_obj_t *btn_tichy;
-    lv_obj_t *obj0;
     lv_obj_t *lbl_setpoint_title;
     lv_obj_t *btn_minus;
     lv_obj_t *obj1;

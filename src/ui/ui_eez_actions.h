@@ -12,7 +12,6 @@ extern void action_akce_teplota_minus(lv_event_t * e);
 extern void action_akce_start_stop(lv_event_t * e);
 extern void action_akce_start(lv_event_t * e);
 extern void action_akce_stop(lv_event_t * e);
-extern void action_akce_tichy_rezim(lv_event_t * e);
 extern void action_akce_menu(lv_event_t * e);
 extern void action_akce_zpet(lv_event_t * e);
 extern void action_akce_wifi_toggle(lv_event_t * e);
@@ -23,6 +22,8 @@ extern void action_akce_mqtt_connect(lv_event_t * e);
 extern void action_akce_settings_ble(lv_event_t * e);
 extern void action_akce_settings_plan(lv_event_t * e);
 extern void action_akce_settings_servis(lv_event_t * e);
+extern void action_akce_plan_back(lv_event_t * e);
+extern void action_akce_plan_toggle(lv_event_t * e);
 
 #ifdef __cplusplus
 }

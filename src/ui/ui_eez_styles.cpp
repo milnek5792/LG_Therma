@@ -175,39 +175,6 @@ void remove_style_btn_menu(lv_obj_t *obj) {
 };
 
 //
-// Style: btn_tichy
-//
-
-void init_style_btn_tichy_MAIN_DEFAULT(lv_style_t *style) {
-    lv_style_set_bg_color(style, lv_color_hex(0x0a84ff));
-    lv_style_set_text_color(style, lv_color_hex(0xffffff));
-    lv_style_set_radius(style, 6);
-    lv_style_set_text_align(style, LV_TEXT_ALIGN_CENTER);
-    lv_style_set_text_font(style, &lv_font_montserrat_14);
-    lv_style_set_border_width(style, 0);
-};
-
-lv_style_t *get_style_btn_tichy_MAIN_DEFAULT() {
-    static lv_style_t *style;
-    if (!style) {
-        style = (lv_style_t *)lv_malloc(sizeof(lv_style_t));
-        lv_style_init(style);
-        init_style_btn_tichy_MAIN_DEFAULT(style);
-    }
-    return style;
-};
-
-void add_style_btn_tichy(lv_obj_t *obj) {
-    (void)obj;
-    lv_obj_add_style(obj, get_style_btn_tichy_MAIN_DEFAULT(), LV_PART_MAIN | LV_STATE_DEFAULT);
-};
-
-void remove_style_btn_tichy(lv_obj_t *obj) {
-    (void)obj;
-    lv_obj_remove_style(obj, get_style_btn_tichy_MAIN_DEFAULT(), LV_PART_MAIN | LV_STATE_DEFAULT);
-};
-
-//
 // Style: btn1
 //
 
@@ -280,7 +247,6 @@ void add_style(lv_obj_t *obj, int32_t styleIndex) {
         add_style_btn_stop,
         add_style_btn_step,
         add_style_btn_menu,
-        add_style_btn_tichy,
         add_style_btn1,
         add_style_text_24,
     };
@@ -294,7 +260,6 @@ void remove_style(lv_obj_t *obj, int32_t styleIndex) {
         remove_style_btn_stop,
         remove_style_btn_step,
         remove_style_btn_menu,
-        remove_style_btn_tichy,
         remove_style_btn1,
         remove_style_text_24,
     };

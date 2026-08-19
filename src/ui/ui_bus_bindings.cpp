@@ -4,6 +4,7 @@
 #include "bus_lg_lin_api.h"
 #include "bus_lg_model.h"
 #include "bus_lg_protocol.h"
+#include "climate_plan.h"
 #include "ui_eez_model.h"
 
 #include <Arduino.h>
@@ -219,7 +220,20 @@ void uiBusQueueAdjustSetpoint(int deltaC) {
   s_pending = PendingCmd::Adjust;
 }
 
+void uiBusPlanApplyStart(void) {
+  provedStart();
+}
+
+void uiBusPlanApplyStop(void) {
+  provedStop();
+}
+
+void uiBusPlanApplySetpoint(uint8_t teplotaC) {
+  provedTeplotaAbsolutni(teplotaC);
+}
+
 void uiBusBindingsTick(void) {
   applyPendingFromMqtt();
+  climatePlanTick();
   uiEezSyncFromBus();
 }

@@ -24,6 +24,11 @@ void uiBusQueueAdjustSetpoint(int deltaC);
 
 void uiBusBindingsTick(void);
 
+/** Volani z casoveho planu — obchazi rucni ovladani behem planu. */
+void uiBusPlanApplyStart(void);
+void uiBusPlanApplyStop(void);
+void uiBusPlanApplySetpoint(uint8_t teplotaC);
+
 #ifdef __cplusplus
 }
 #endif

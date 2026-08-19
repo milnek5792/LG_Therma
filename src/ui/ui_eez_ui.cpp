@@ -3,6 +3,7 @@
 #include "ui_eez_screens.h"
 #include "ui_eez_settings.h"
 #include "ui_eez_wifi_form.h"
+#include "ui_eez_plan.h"
 #include "ui_eez_images.h"
 #include "ui_eez_actions.h"
 #include "ui_eez_vars.h"
@@ -10,6 +11,7 @@
 #include "ui_eez_nav.h"
 #include "ui_net_sync.h"
 #include "ui_bus_bindings.h"
+#include "climate_plan.h"
 
 #include <Arduino.h>
 #include <string.h>
@@ -29,6 +31,9 @@ static lv_obj_t* getLvglObjectFromIndex(int32_t index) {
   }
   if (index == 2) {
     return uiWifiFormScreen();
+  }
+  if (index == 3) {
+    return uiPlanScreen();
   }
   return nullptr;
 }
@@ -55,6 +60,7 @@ void ui_init() {
   create_screens();
   uiSettingsCreate();
   uiWifiFormCreate();
+  uiPlanCreate();
 #if LG_THERMA_BOOT_SETTINGS
   loadScreen(SCREEN_ID_SETTINGS);
 #else
@@ -112,6 +118,17 @@ void ui_tick() {
       break;
     case UI_AKCE_SETTINGS_BLE:
       uiNetHandleAction(akce);
+      break;
+    case UI_AKCE_SETTINGS_PLAN:
+      uiNavigateTo(SCREEN_ID_PLAN);
+      break;
+    case UI_AKCE_PLAN_BACK:
+      uiNavigateTo(SCREEN_ID_SETTINGS);
+      break;
+    case UI_AKCE_PLAN_TOGGLE:
+      g_planConfig.aktivni = !g_planConfig.aktivni;
+      climatePlanSave();
+      uiPlanRefreshAll();
       break;
     case UI_AKCE_START_STOP:
     case UI_AKCE_START:

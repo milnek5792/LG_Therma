@@ -1,5 +1,7 @@
 #include "storage_config_nvs.h"
 
+#include "climate_plan.h"
+
 #include <Preferences.h>
 #include <string.h>
 
@@ -15,6 +17,9 @@ constexpr const char* kKeyWifiPass = "wifi_pass";
 constexpr const char* kKeyMqttEn = "mqtt_en";
 constexpr const char* kKeyBlPct = "bl_pct";
 constexpr const char* kKeyBlSleep = "bl_sleep";
+constexpr const char* kKeyPlan = "plan_cfg";
+constexpr uint32_t kPlanMagic = 0x504C414Eu;
+constexpr uint16_t kPlanVersion = 1;
 
 void ensureOpen() {
   if (!s_open) {
@@ -108,4 +113,44 @@ uint32_t storageLoadSleepTimeoutSec(void) {
 void storageSaveSleepTimeoutSec(uint32_t sec) {
   ensureOpen();
   s_prefs.putUInt(kKeyBlSleep, sec);
+}
+
+bool storageLoadPlanConfig(PlanTydenConfig* cfg) {
+  if (!cfg) {
+    return false;
+  }
+  ensureOpen();
+  size_t len = s_prefs.getBytesLength(kKeyPlan);
+  if (len < sizeof(PlanTydenConfig) + 6) {
+    return false;
+  }
+  uint8_t buf[sizeof(PlanTydenConfig) + 8];
+  const size_t got = s_prefs.getBytes(kKeyPlan, buf, sizeof(buf));
+  if (got < 6) {
+    return false;
+  }
+  uint32_t magic = 0;
+  uint16_t version = 0;
+  memcpy(&magic, buf, 4);
+  memcpy(&version, buf + 4, 2);
+  if (magic != kPlanMagic || version != kPlanVersion) {
+    return false;
+  }
+  if (got < 6 + sizeof(PlanTydenConfig)) {
+    return false;
+  }
+  memcpy(cfg, buf + 6, sizeof(PlanTydenConfig));
+  return true;
+}
+
+void storageSavePlanConfig(const PlanTydenConfig* cfg) {
+  if (!cfg) {
+    return;
+  }
+  ensureOpen();
+  uint8_t buf[6 + sizeof(PlanTydenConfig)];
+  memcpy(buf, &kPlanMagic, 4);
+  memcpy(buf + 4, &kPlanVersion, 2);
+  memcpy(buf + 6, cfg, sizeof(PlanTydenConfig));
+  s_prefs.putBytes(kKeyPlan, buf, sizeof(buf));
 }

@@ -253,34 +253,6 @@ void create_screen_main() {
             lv_label_set_text(obj, "");
         }
         {
-            // btn_tichy
-            lv_obj_t *obj = lv_button_create(parent_obj);
-            objects.btn_tichy = obj;
-            lv_obj_set_pos(obj, 805, 12);
-            lv_obj_set_size(obj, 210, 36);
-            lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_add_flag(obj, LV_OBJ_FLAG_PRESS_LOCK);
-            lv_obj_add_event_cb(obj, action_akce_tichy_rezim, LV_EVENT_CLICKED, (void *)0);
-            lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_CHAIN);
-            lv_obj_remove_flag(obj, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM));
-            {
-                lv_obj_t *parent_obj = obj;
-                {
-                    lv_obj_t *obj = lv_label_create(parent_obj);
-                    objects.obj0 = obj;
-                    lv_obj_set_pos(obj, 0, 0);
-                    lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-                    lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_CHAIN);
-                    lv_obj_remove_flag(obj, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM));
-            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
-                    lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_text_font(obj, &lv_font_montserrat_18, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_text_color(obj, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_label_set_text_static(obj, "Tichy rezim");
-                }
-            }
-        }
-        {
             // lbl_setpoint_title
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.lbl_setpoint_title = obj;
@@ -852,6 +824,15 @@ void tick_screen_main() {
         }
     }
     {
+        const char *new_val = get_var_plan_title();
+        const char *cur_val = lv_label_get_text(objects.lbl_plan_title);
+        if (strcmp(new_val, cur_val) != 0) {
+            tick_value_change_obj = objects.lbl_plan_title;
+            lv_label_set_text(objects.lbl_plan_title, new_val);
+            tick_value_change_obj = NULL;
+        }
+    }
+    {
         static uint32_t last_hex = 0xFFFFFFFF;
         uint32_t hex = get_var_sig_chod___3199320___0x2c2c2e();
         if (hex != last_hex) {
@@ -992,15 +973,17 @@ void tick_screen_main() {
 
 #include "ui_eez_settings.h"
 #include "ui_eez_wifi_form.h"
+#include "ui_eez_plan.h"
 
 typedef void (*tick_screen_func_t)();
 tick_screen_func_t tick_screen_funcs[] = {
     tick_screen_main,
     uiSettingsTick,
     uiWifiFormTick,
+    uiPlanTick,
 };
 void tick_screen(int screen_index) {
-    if (screen_index >= 0 && screen_index < 3) {
+    if (screen_index >= 0 && screen_index < 4) {
         tick_screen_funcs[screen_index]();
     }
 }

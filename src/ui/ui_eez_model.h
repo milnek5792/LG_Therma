@@ -33,7 +33,6 @@ enum UiAkceTlacitko : uint8_t {
   UI_AKCE_TEPLOTA_PLUS,
   UI_AKCE_TEPLOTA_MINUS,
   UI_AKCE_REZIM_PREPNOUT,
-  UI_AKCE_TICHY_REZIM,
   UI_AKCE_MENU,
   UI_AKCE_ZPET,
   UI_AKCE_WIFI_TOGGLE,
@@ -47,6 +46,8 @@ enum UiAkceTlacitko : uint8_t {
   UI_AKCE_SETTINGS_BLE,
   UI_AKCE_SETTINGS_PLAN,
   UI_AKCE_SETTINGS_SERVIS,
+  UI_AKCE_PLAN_BACK,
+  UI_AKCE_PLAN_TOGGLE,
 };
 
 // Jmena promennych v EEZ (Native variables) — kopiruj do EEZ 1:1
@@ -76,6 +77,7 @@ enum UiAkceTlacitko : uint8_t {
 #define EEZ_VAR_DATUM                "datum_text"      // string "20.07.2026"
 #define EEZ_VAR_CAS_PLATNY           "cas_platny"      // bool — NTP synchronizovan
 #define EEZ_VAR_PLAN_TEXT            "plan_text"       // string — radek planovace (HMI)
+#define EEZ_VAR_PLAN_TITLE           "plan_title"      // string — stav planovace (HMI)
 
 #define EEZ_VAR_AKCE                 "akce_tlacitko"   // int enum UiAkceTlacitko (EEZ -> FW)
 
@@ -105,6 +107,7 @@ struct UiEezModel {
   char cas_text[8];
   char datum_text[12];
   bool cas_platny;
+  char plan_title[32];
   char plan_text[96];
 
   char set_wifi_ssid[33];

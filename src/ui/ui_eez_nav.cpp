@@ -36,3 +36,7 @@ bool uiIsSettingsScreen() {
 bool uiIsWifiSetupScreen() {
   return uiGetCurrentScreen() == SCREEN_ID_WIFI_SETUP;
 }
+
+bool uiIsPlanScreen() {
+  return uiGetCurrentScreen() == SCREEN_ID_PLAN;
+}
