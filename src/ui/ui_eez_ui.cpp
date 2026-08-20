@@ -60,7 +60,6 @@ void ui_init() {
   create_screens();
   uiSettingsCreate();
   uiWifiFormCreate();
-  uiPlanCreate();
 #if LG_THERMA_BOOT_SETTINGS
   loadScreen(SCREEN_ID_SETTINGS);
 #else
@@ -127,7 +126,7 @@ void ui_tick() {
       break;
     case UI_AKCE_PLAN_TOGGLE:
       g_planConfig.aktivni = !g_planConfig.aktivni;
-      climatePlanSave();
+      uiPlanMarkDirty();
       uiPlanRefreshAll();
       break;
     case UI_AKCE_START_STOP:

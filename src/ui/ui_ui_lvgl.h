@@ -22,6 +22,10 @@ uint32_t uiLvglFlushCount();
 uint32_t uiLvglRgbRestartCount();
 /** Po Wi-Fi/MQTT spike: znovu seřadí RGB DMA (anti permanent shift). */
 void uiLvglRgbRecover(const char* reason);
+/** Soft: full redraw. Hard: RGB restart + soft. Okamžité. */
+void uiLvglRecoverDisplay(const char* reason);
+/** Odložená obnova — neblokuje event handler (preferovat před RecoverDisplay). */
+void uiLvglScheduleRecover(const char* reason, bool hard, uint32_t delayMs);
 /** No-op: PCLK je pevný (runtime změna bliká celou plochu). */
 void uiLvglSetRgbLowBandwidth(bool low);
 int uiLvglHorRes();

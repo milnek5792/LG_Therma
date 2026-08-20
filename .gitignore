@@ -8,3 +8,4 @@
 **/*.bin
 **/*.elf
 **/*.hex
+include/app_build_stamp.h

@@ -18,7 +18,7 @@
 #define LV_USE_OS LV_OS_NONE
 
 #define LV_USE_STDLIB_MALLOC LV_STDLIB_BUILTIN
-#define LV_MEM_SIZE (256U * 1024U)
+#define LV_MEM_SIZE (512U * 1024U)
 #define LV_MEM_POOL_INCLUDE "esp_heap_caps.h"
 #define LV_MEM_POOL_ALLOC(size) heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
 

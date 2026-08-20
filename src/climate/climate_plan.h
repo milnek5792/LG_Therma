@@ -26,6 +26,12 @@ enum PlanAkce : uint8_t {
   PLAN_AKCE_VYP = 2,
 };
 
+/** Způsob zadání konce období v UI. */
+enum PlanCasRezim : uint8_t {
+  PLAN_CAS_OD_DO = 0,
+  PLAN_CAS_OD_DELKA = 1,
+};
+
 struct PlanCas {
   uint8_t hodina;
   uint8_t minuta;
@@ -34,6 +40,7 @@ struct PlanCas {
 struct PlanObdobiCas {
   PlanCas zacatek;
   PlanCas konec;
+  PlanCasRezim cas_rezim;
 };
 
 struct PlanBunka {

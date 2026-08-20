@@ -55,9 +55,9 @@ void setup() {
   esp_log_set_vprintf(usbLogVprintf);
 
   Serial.println();
-  Serial.printf("=== LG THERMA 7B FW v%s ===\n", APP_FW_VERSION);
+  Serial.printf("=== LG THERMA 7B FW %s ===\n", APP_FW_VERSION);
   ESP_LOGI(TAG, "==================================================");
-  ESP_LOGI(TAG, "LG THERMA 7B FW v%s (no cmd/quiet)", APP_FW_VERSION);
+  ESP_LOGI(TAG, "LG THERMA 7B FW %s (no cmd/quiet)", APP_FW_VERSION);
   ESP_LOGI(TAG, "PSRAM size=%u free=%u",
            (unsigned)ESP.getPsramSize(),
            (unsigned)ESP.getFreePsram());

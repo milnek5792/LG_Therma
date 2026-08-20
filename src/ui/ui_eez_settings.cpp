@@ -209,8 +209,8 @@ void uiSettingsCreate() {
       scr, kMargin, 4, 120, kBtnH, "<- ZPET", action_akce_zpet, 0x48484Fu);
   settingsObj.lbl_title = makeLabel(scr, 0, 10, 0, "NASTAVENI", kColText);
   lv_obj_set_style_align(settingsObj.lbl_title, LV_ALIGN_TOP_MID, LV_PART_MAIN | LV_STATE_DEFAULT);
-  char versionText[20];
-  snprintf(versionText, sizeof(versionText), "v%s", APP_FW_VERSION);
+  char versionText[24];
+  snprintf(versionText, sizeof(versionText), "%s", APP_FW_VERSION);
   settingsObj.lbl_version = makeLabel(scr, 0, 10, 220, versionText, kColMuted);
   lv_obj_set_style_align(settingsObj.lbl_version, LV_ALIGN_TOP_RIGHT,
                          LV_PART_MAIN | LV_STATE_DEFAULT);

@@ -45,10 +45,22 @@ int s_verRes = 0;
 int16_t s_touchLastX = 0;
 int16_t s_touchLastY = 0;
 
+volatile uint32_t s_lastVsyncMs = 0;
+volatile uint8_t s_vsyncMissStreak = 0;
+volatile bool s_vsyncHealthFail = false;
+
+bool s_recoverPending = false;
+bool s_recoverHard = false;
+uint32_t s_recoverDueMs = 0;
+const char* s_recoverReason = nullptr;
+uint32_t s_lastHardRecoverMs = 0;
+uint32_t s_frozenSinceMs = 0;
+
 bool onVsync(esp_lcd_panel_handle_t panel, const esp_lcd_rgb_panel_event_data_t* edata, void* user_ctx) {
   (void)panel;
   (void)edata;
   (void)user_ctx;
+  s_lastVsyncMs = static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
   BaseType_t hp = pdFALSE;
   if (s_vsyncSem) {
     xSemaphoreGiveFromISR(s_vsyncSem, &hp);
@@ -69,7 +81,19 @@ void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* pxMap) {
     if (s_touchArmed && s_vsyncSem) {
       xSemaphoreTake(s_vsyncSem, 0);
       // Čekej na VSYNC (max ~2 snímky @ ~30–60 Hz)
-      xSemaphoreTake(s_vsyncSem, pdMS_TO_TICKS(40));
+      if (xSemaphoreTake(s_vsyncSem, pdMS_TO_TICKS(50)) != pdTRUE) {
+        uint8_t miss = s_vsyncMissStreak;
+        if (miss < 255) {
+          ++miss;
+        }
+        s_vsyncMissStreak = miss;
+        if (miss >= 4) {
+          s_vsyncHealthFail = true;
+          s_vsyncMissStreak = 0;
+        }
+      } else {
+        s_vsyncMissStreak = 0;
+      }
     }
   }
 
@@ -86,6 +110,120 @@ void touchDrain() {
     uint16_t x[1], y[1], s[1];
     uint8_t n = 0;
     esp_lcd_touch_get_coordinates(s_touch, x, y, s, &n, 1);
+  }
+}
+
+void softRepaint(void) {
+  lv_display_t* disp = lv_display_get_default();
+  lv_obj_t* scr = lv_screen_active();
+  if (scr) {
+    lv_obj_invalidate(scr);
+  }
+  if (!disp) {
+    return;
+  }
+  // Dva refr — přímý double-FB, ať se překreslí oba buffery
+  lv_refr_now(disp);
+  if (scr) {
+    lv_obj_invalidate(scr);
+  }
+  lv_refr_now(disp);
+}
+
+void resetTouchInput(void) {
+  touchDrain();
+  if (s_indev) {
+    lv_indev_reset(s_indev, nullptr);
+  }
+}
+
+void doRgbRestart(const char* reason) {
+  if (!s_panel) {
+    return;
+  }
+  const esp_err_t err = esp_lcd_rgb_panel_restart(s_panel);
+  ++s_rgbRestartCount;
+  s_lastHardRecoverMs = millis();
+  s_vsyncMissStreak = 0;
+  s_vsyncHealthFail = false;
+  ESP_LOGI("LVGL", "RGB DMA restart #%u reason=%s err=%s",
+           (unsigned)s_rgbRestartCount,
+           reason ? reason : "?",
+           esp_err_to_name(err));
+}
+
+void runScheduledRecover(void) {
+  if (!s_recoverPending || millis() < s_recoverDueMs) {
+    return;
+  }
+  const bool hard = s_recoverHard;
+  const char* reason = s_recoverReason ? s_recoverReason : "sched";
+  s_recoverPending = false;
+  s_recoverHard = false;
+
+  if (s_frozen) {
+    s_frozen = false;
+    s_frozenSinceMs = 0;
+  }
+
+  resetTouchInput();
+
+  if (hard) {
+    const uint32_t now = millis();
+    if (s_lastHardRecoverMs != 0 && (now - s_lastHardRecoverMs) < 2500) {
+      softRepaint();
+    } else {
+      doRgbRestart(reason);
+      softRepaint();
+    }
+  } else {
+    softRepaint();
+  }
+
+  resetTouchInput();
+}
+
+void displayHealthWatchdog(void) {
+  if (!s_initDone || !s_touchArmed || uiDisplayIsAsleep()) {
+    return;
+  }
+
+  const uint32_t now = millis();
+
+  if (s_frozen && s_frozenSinceMs != 0 && (now - s_frozenSinceMs) > 4000) {
+    ESP_LOGW("LVGL", "freeze watchdog — unfreeze after %lu ms",
+             (unsigned long)(now - s_frozenSinceMs));
+    s_frozen = false;
+    s_frozenSinceMs = 0;
+    s_recoverPending = true;
+    s_recoverHard = true;
+    s_recoverReason = "freeze_wd";
+    s_recoverDueMs = now + 30;
+    return;
+  }
+
+  if (s_frozen) {
+    return;
+  }
+
+  if (s_vsyncHealthFail) {
+    s_vsyncHealthFail = false;
+    ESP_LOGW("LVGL", "vsync miss streak — hard recover");
+    s_recoverPending = true;
+    s_recoverHard = true;
+    s_recoverReason = "vsync_miss";
+    s_recoverDueMs = now + 20;
+    return;
+  }
+
+  const uint32_t lastVs = s_lastVsyncMs;
+  if (lastVs != 0 && (now - lastVs) > 200) {
+    ESP_LOGW("LVGL", "vsync silent %lu ms — hard recover",
+             (unsigned long)(now - lastVs));
+    s_recoverPending = true;
+    s_recoverHard = true;
+    s_recoverReason = "vsync_silent";
+    s_recoverDueMs = now + 20;
   }
 }
 
@@ -234,7 +372,7 @@ void uiLvglSetFrozen(bool frozen) {
     return;
   }
   s_frozen = frozen;
-  // Bez full invalidate — po BLE/MQTT to blikne celá obrazovka
+  s_frozenSinceMs = frozen ? millis() : 0;
 }
 
 bool uiLvglIsFrozen() { return s_frozen; }
@@ -264,19 +402,37 @@ uint32_t uiLvglFlushCount() { return s_flushCount; }
 uint32_t uiLvglRgbRestartCount() { return s_rgbRestartCount; }
 
 void uiLvglRgbRecover(const char* reason) {
-  if (!s_panel) {
+  doRgbRestart(reason);
+}
+
+void uiLvglRecoverDisplay(const char* reason) {
+  if (!s_initDone) {
     return;
   }
-  const esp_err_t err = esp_lcd_rgb_panel_restart(s_panel);
-  ++s_rgbRestartCount;
-  ESP_LOGI("LVGL", "RGB DMA restart #%u reason=%s err=%s",
-           (unsigned)s_rgbRestartCount,
-           reason ? reason : "?",
-           esp_err_to_name(err));
+  if (s_frozen) {
+    s_frozen = false;
+    s_frozenSinceMs = 0;
+  }
+  resetTouchInput();
+  doRgbRestart(reason);
+  softRepaint();
+  resetTouchInput();
+}
+
+void uiLvglScheduleRecover(const char* reason, bool hard, uint32_t delayMs) {
+  if (!s_initDone) {
+    return;
+  }
+  if (s_recoverPending && s_recoverHard && !hard) {
+    return;
+  }
+  s_recoverPending = true;
+  s_recoverHard = hard;
+  s_recoverReason = reason;
+  s_recoverDueMs = millis() + delayMs;
 }
 
 void uiLvglSetRgbLowBandwidth(bool low) {
-  // Runtime set_pclk způsobuje celoplosný glitch — PCLK je pevně 12 MHz
   (void)low;
 }
 
@@ -289,6 +445,8 @@ void uiLvglTick() {
   }
 
   uiDisplayTick();
+  displayHealthWatchdog();
+  runScheduledRecover();
 
   if (s_frozen) {
     const uint32_t now = millis();

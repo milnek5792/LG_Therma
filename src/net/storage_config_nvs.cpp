@@ -19,7 +19,10 @@ constexpr const char* kKeyBlPct = "bl_pct";
 constexpr const char* kKeyBlSleep = "bl_sleep";
 constexpr const char* kKeyPlan = "plan_cfg";
 constexpr uint32_t kPlanMagic = 0x504C414Eu;
-constexpr uint16_t kPlanVersion = 1;
+/** Bump jen při změně layoutu PlanTydenConfig — ne při změně výchozích hodnot. */
+constexpr uint16_t kPlanVersion = 4;
+/** Nejstarší verze se stejným binárním layoutem (včetně cas_rezim). */
+constexpr uint16_t kPlanVersionMinCompat = 2;
 
 void ensureOpen() {
   if (!s_open) {
@@ -126,17 +129,19 @@ bool storageLoadPlanConfig(PlanTydenConfig* cfg) {
   }
   uint8_t buf[sizeof(PlanTydenConfig) + 8];
   const size_t got = s_prefs.getBytes(kKeyPlan, buf, sizeof(buf));
-  if (got < 6) {
+  if (got < 6 + sizeof(PlanTydenConfig)) {
     return false;
   }
   uint32_t magic = 0;
   uint16_t version = 0;
   memcpy(&magic, buf, 4);
   memcpy(&version, buf + 4, 2);
-  if (magic != kPlanMagic || version != kPlanVersion) {
+  if (magic != kPlanMagic) {
     return false;
   }
-  if (got < 6 + sizeof(PlanTydenConfig)) {
+  // Starší kompatibilní verze (2..4) načti — nemazat tabulku při bump verze / flashi.
+  // Novější se stejným layoutem také přijmi.
+  if (version < kPlanVersionMinCompat) {
     return false;
   }
   memcpy(cfg, buf + 6, sizeof(PlanTydenConfig));
