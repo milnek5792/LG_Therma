@@ -29,9 +29,9 @@ void uiNavigateTo(enum ScreensEnum screenId) {
   loadScreen(screenId);
   uiLvglSetPointerInput(true);
   if (leavingPlan) {
-    // Nejdřív nová obrazovka, pak NVS (bez freeze), pak odložený soft redraw
     uiPlanFlushSave();
-    uiLvglScheduleRecover("post_plan", false, 120);
+    uiLvglScheduleRecover("post_plan", false, 100);
+    uiLvglScheduleRecover("post_plan_hard", true, 480);
   }
   if (screenId != SCREEN_ID_WIFI_SETUP) {
     uiTouchVisualInit();

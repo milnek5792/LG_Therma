@@ -53,8 +53,15 @@ bool s_recoverPending = false;
 bool s_recoverHard = false;
 uint32_t s_recoverDueMs = 0;
 const char* s_recoverReason = nullptr;
+bool s_recoverFollowHard = false;
+uint32_t s_recoverFollowDueMs = 0;
+const char* s_recoverFollowReason = nullptr;
 uint32_t s_lastHardRecoverMs = 0;
 uint32_t s_frozenSinceMs = 0;
+bool s_wasAsleep = false;
+bool s_wasFrozen = false;
+
+constexpr uint32_t kHardRecoverCooldownMs = 900;
 
 bool onVsync(esp_lcd_panel_handle_t panel, const esp_lcd_rgb_panel_event_data_t* edata, void* user_ctx) {
   (void)panel;
@@ -153,9 +160,25 @@ void doRgbRestart(const char* reason) {
 }
 
 void runScheduledRecover(void) {
-  if (!s_recoverPending || millis() < s_recoverDueMs) {
+  const uint32_t now = millis();
+
+  // Follow-up hard po softu (soft → hard žebřík)
+  if (!s_recoverPending && s_recoverFollowHard && now >= s_recoverFollowDueMs) {
+    s_recoverPending = true;
+    s_recoverHard = true;
+    s_recoverReason = s_recoverFollowReason ? s_recoverFollowReason : "follow_hard";
+    s_recoverDueMs = now;
+    s_recoverFollowHard = false;
+  }
+
+  if (!s_recoverPending || now < s_recoverDueMs) {
     return;
   }
+  if (uiDisplayIsAsleep()) {
+    // Ve spánku nepřekreslovat — recover po wake
+    return;
+  }
+
   const bool hard = s_recoverHard;
   const char* reason = s_recoverReason ? s_recoverReason : "sched";
   s_recoverPending = false;
@@ -164,13 +187,13 @@ void runScheduledRecover(void) {
   if (s_frozen) {
     s_frozen = false;
     s_frozenSinceMs = 0;
+    s_wasFrozen = false;
   }
 
   resetTouchInput();
 
   if (hard) {
-    const uint32_t now = millis();
-    if (s_lastHardRecoverMs != 0 && (now - s_lastHardRecoverMs) < 2500) {
+    if (s_lastHardRecoverMs != 0 && (now - s_lastHardRecoverMs) < kHardRecoverCooldownMs) {
       softRepaint();
     } else {
       doRgbRestart(reason);
@@ -373,6 +396,12 @@ void uiLvglSetFrozen(bool frozen) {
   }
   s_frozen = frozen;
   s_frozenSinceMs = frozen ? millis() : 0;
+  if (!frozen && s_wasFrozen) {
+    // Po Wi-Fi/MQTT/BLE špičce — soft + hard (posun FB vsync často nechytí)
+    uiLvglScheduleRecover("unfreeze", false, 80);
+    uiLvglScheduleRecover("unfreeze_hard", true, 420);
+  }
+  s_wasFrozen = frozen;
 }
 
 bool uiLvglIsFrozen() { return s_frozen; }
@@ -406,12 +435,13 @@ void uiLvglRgbRecover(const char* reason) {
 }
 
 void uiLvglRecoverDisplay(const char* reason) {
-  if (!s_initDone) {
+  if (!s_initDone || uiDisplayIsAsleep()) {
     return;
   }
   if (s_frozen) {
     s_frozen = false;
     s_frozenSinceMs = 0;
+    s_wasFrozen = false;
   }
   resetTouchInput();
   doRgbRestart(reason);
@@ -423,13 +453,24 @@ void uiLvglScheduleRecover(const char* reason, bool hard, uint32_t delayMs) {
   if (!s_initDone) {
     return;
   }
+  const uint32_t due = millis() + delayMs;
+  // Soft už čeká → hard zařadit jako follow-up (nesmazat soft)
+  if (hard && s_recoverPending && !s_recoverHard) {
+    s_recoverFollowHard = true;
+    s_recoverFollowDueMs = due;
+    s_recoverFollowReason = reason;
+    return;
+  }
   if (s_recoverPending && s_recoverHard && !hard) {
     return;
   }
   s_recoverPending = true;
   s_recoverHard = hard;
   s_recoverReason = reason;
-  s_recoverDueMs = millis() + delayMs;
+  s_recoverDueMs = due;
+  if (hard) {
+    s_recoverFollowHard = false;
+  }
 }
 
 void uiLvglSetRgbLowBandwidth(bool low) {
@@ -445,6 +486,25 @@ void uiLvglTick() {
   }
 
   uiDisplayTick();
+
+  const bool asleep = uiDisplayIsAsleep();
+  if (s_wasAsleep && !asleep) {
+    // Probuzení: soft + hard — DMA často ujede během dlouhého spánku pod Wi-Fi
+    uiLvglScheduleRecover("wake", false, 60);
+    uiLvglScheduleRecover("wake_hard", true, 380);
+  }
+  s_wasAsleep = asleep;
+
+  if (asleep) {
+    // Displej vypnutý ~90 % času: žádné LVGL / flush / recover
+    const uint32_t now = millis();
+    if (now != s_lastTickMs) {
+      lv_tick_inc(now - s_lastTickMs);
+      s_lastTickMs = now;
+    }
+    return;
+  }
+
   displayHealthWatchdog();
   runScheduledRecover();
 
@@ -464,9 +524,6 @@ void uiLvglTick() {
 
   lv_timer_handler();
 
-  if (uiDisplayIsAsleep()) {
-    return;
-  }
 #if !LG_THERMA_SIMPLE_UI
   ui_tick();
   uiNetSyncWifi();
