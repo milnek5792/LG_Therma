@@ -78,12 +78,33 @@ void uiEezSyncFromBus() {
   uint8_t b3 = lgModelA0Bajt(3);
 
   uint8_t cilova = pozadavekNaZapis ? novaCilovaTeplota : mCilova;
-  // A0 B5 ≈ venkovní (ambient); 0 = neplatné
-  const uint8_t venkovni = lgModelA0Bajt(5);
+  // Venkovní T jen z BLE outdoor — LIN A0 B5 se nepoužívá
 
-  // Setpoint z LIN (A0 B8), při zápisu z UI dočasně novaCilovaTeplota
-  if (pozadavekNaZapis || maA0) {
-    if (cilova >= 15 && cilova <= 65) {
+  if (uiEez.rezim != UI_REZIM_AUTO) {
+    // Ruční: pending = command na displeji, jinak potvrzené A0 B8
+    if (pozadavekNaZapis) {
+      if (novaCilovaTeplota >= 15 && novaCilovaTeplota <= 65) {
+        uiEez.teplota_vody_set = static_cast<float>(novaCilovaTeplota);
+      }
+    } else if (maA0) {
+      const uint8_t a0Sp = lgModelA0Bajt(8);
+      if (a0Sp >= 15 && a0Sp <= 65) {
+        uiEez.teplota_vody_set = static_cast<float>(a0Sp);
+      } else if (cilova >= 15 && cilova <= 65) {
+        uiEez.teplota_vody_set = static_cast<float>(cilova);
+      }
+    } else if (cilova < 15) {
+      uiEez.teplota_vody_set = UI_TEPLOTA_NEPLATNA;
+    }
+  } else if (pozadavekNaZapis) {
+    if (novaCilovaTeplota >= 15 && novaCilovaTeplota <= 65) {
+      uiEez.teplota_vody_set = static_cast<float>(novaCilovaTeplota);
+    }
+  } else if (maA0) {
+    const uint8_t a0Sp = lgModelA0Bajt(8);
+    if (a0Sp >= 15 && a0Sp <= 65) {
+      uiEez.teplota_vody_set = static_cast<float>(a0Sp);
+    } else if (cilova >= 15 && cilova <= 65) {
       uiEez.teplota_vody_set = static_cast<float>(cilova);
     }
   } else if (cilova < 15) {
@@ -92,8 +113,7 @@ void uiEezSyncFromBus() {
 
   uiEez.teplota_vody_vstup = uiTeplotaC(mVstupni, maA0 && mVstupni > 0);
   uiEez.teplota_vody_vystup = uiTeplotaC(mVystupni, maA0 && mVystupni > 0);
-  uiEez.teplota_venkovni =
-      uiTeplotaC(venkovni, maA0 && venkovni > 0 && venkovni < 80);
+  // uiEez.teplota_venkovni nastavuje climate_ble_room
 
   if (maA0 && mVstupni > 0 && mVystupni > 0) {
     uiEez.teplota_spad = (float)((int)mVystupni - (int)mVstupni);

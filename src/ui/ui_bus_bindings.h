@@ -1,17 +1,34 @@
 // ui_bus_bindings.h — UI ↔ LIN
+//
+// Priority (varianta A):
+//   Auto:  voda = jen regulátor; pokoj = HMI|MQTT (last-write-wins); plán = offset/VYP
+//   Ruční: voda = HMI|MQTT|plán; regulátor vypnutý
+//   Power STOP vždy z HMI / MQTT / plánu
 #ifndef UI_BUS_BINDINGS_H
 #define UI_BUS_BINDINGS_H
 
 #include "ui_eez_model.h"
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+/** Zdroj požadavku na SP — řídí brány podle režimu. */
+typedef enum {
+  UI_SP_SRC_HMI = 0,
+  UI_SP_SRC_MQTT,
+  UI_SP_SRC_REGULATOR,
+  UI_SP_SRC_PLAN,
+} UiSpSource;
+
 void uiBusHandleAkce(UiAkceTlacitko akce);
-/** Absolutní setpoint °C (MQTT cmd/setpoint) → LIN. */
+
+/** Absolutní SP vody °C ze zdroje (brána podle režimu). */
+void uiBusSetWaterSp(uint8_t teplotaC, UiSpSource src);
+/** Regulátor → SP vody (alias UI_SP_SRC_REGULATOR). */
 void uiBusSetSetpointC(uint8_t teplotaC);
-/** Relativní změna (±1 …) z aktuální hodnoty — jako +/- na HMI. */
+/** Relativní změna — Auto: pokoj (HMI semantika); ruční: voda. */
 void uiBusAdjustSetpoint(int deltaC);
 
 /**
@@ -24,7 +41,7 @@ void uiBusQueueAdjustSetpoint(int deltaC);
 
 void uiBusBindingsTick(void);
 
-/** Volani z casoveho planu — obchazi rucni ovladani behem planu. */
+/** Volání z časového plánu. */
 void uiBusPlanApplyStart(void);
 void uiBusPlanApplyStop(void);
 void uiBusPlanApplySetpoint(uint8_t teplotaC);

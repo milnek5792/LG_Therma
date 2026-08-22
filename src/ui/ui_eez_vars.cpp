@@ -1,6 +1,7 @@
 // ui_eez_vars.cpp — EEZ native variables -> uiEez model
 #include "ui_eez_vars.h"
 #include "ui_eez_model.h"
+#include "climate_regulator.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -48,8 +49,18 @@ static const char* fmtTempUnit(float c) {
 
 extern "C" {
 
-const char* get_var_teplota_vody_set() { return fmtTemp(uiEez.teplota_vody_set); }
+const char* get_var_teplota_vody_set() {
+  if (uiEez.rezim == UI_REZIM_AUTO) {
+    return fmtTemp(climateRegulatorRoomSpEffective());
+  }
+  return fmtTemp(uiEez.teplota_vody_set);
+}
 void set_var_teplota_vody_set(float value) { uiEez.teplota_vody_set = value; }
+
+/** Skutečný SP vody z TČ (A0) — i v Auto. */
+const char* get_var_teplota_vody_set_lin() {
+  return fmtTemp(uiEez.teplota_vody_set);
+}
 
 const char* get_var_teplota_vody_vstup() { return fmtTemp(uiEez.teplota_vody_vstup); }
 void set_var_teplota_vody_vstup(float value) { uiEez.teplota_vody_vstup = value; }

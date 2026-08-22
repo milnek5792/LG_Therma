@@ -3,6 +3,7 @@ extern "C" {
 #endif
 
 #include <string.h>
+#include <stdio.h>
 
 #include "ui_eez_screens.h"
 #include "ui_eez_images.h"
@@ -263,7 +264,7 @@ void create_screen_main() {
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_set_style_text_font(obj, &ui_font_font_cs_16, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text_static(obj, "POŽADOVANÁ TEPLOTA");
+            lv_label_set_text_static(obj, "Nastavení teploty vody");
         }
         {
             // btn_minus
@@ -321,6 +322,21 @@ void create_screen_main() {
             lv_obj_set_style_text_color(obj, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "°C");
+        }
+        {
+            // lbl_water_sp — Auto: aktuální SP výstupní vody (z regulátoru / LIN)
+            lv_obj_t *obj = lv_label_create(parent_obj);
+            objects.lbl_water_sp = obj;
+            lv_obj_set_pos(obj, -228, -40);
+            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_CHAIN);
+            lv_obj_remove_flag(obj, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM));
+            lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_style_text_font(obj, &ui_font_font_cs_16, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_color(obj, lv_color_hex(0x8e8e93), LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text_static(obj, "");
         }
         {
             // btn_plus
@@ -815,6 +831,32 @@ void tick_screen_main() {
         }
     }
     {
+        const char *title = (get_var_rezim() == 0)
+                                ? "Nastavení pokojové teploty"
+                                : "Nastavení teploty vody";
+        const char *cur = lv_label_get_text(objects.lbl_setpoint_title);
+        if (!cur || strcmp(cur, title) != 0) {
+            lv_label_set_text(objects.lbl_setpoint_title, title);
+        }
+    }
+    {
+        // Auto: malý řádek = skutečný SP vody z TČ (A0)
+        if (objects.lbl_water_sp) {
+            if (get_var_rezim() == 0) {
+                lv_obj_remove_flag(objects.lbl_water_sp, LV_OBJ_FLAG_HIDDEN);
+                char line[48];
+                snprintf(line, sizeof(line), "Voda SP %s °C",
+                         get_var_teplota_vody_set_lin());
+                const char *cur = lv_label_get_text(objects.lbl_water_sp);
+                if (!cur || strcmp(cur, line) != 0) {
+                    lv_label_set_text(objects.lbl_water_sp, line);
+                }
+            } else {
+                lv_obj_add_flag(objects.lbl_water_sp, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+    }
+    {
         const char *new_val = get_var_plan_text();
         const char *cur_val = lv_label_get_text(objects.lbl_plan_text);
         if (strcmp(new_val, cur_val) != 0) {
@@ -974,6 +1016,7 @@ void tick_screen_main() {
 #include "ui_eez_settings.h"
 #include "ui_eez_wifi_form.h"
 #include "ui_eez_plan.h"
+#include "ui_eez_regulator.h"
 
 typedef void (*tick_screen_func_t)();
 tick_screen_func_t tick_screen_funcs[] = {
@@ -981,9 +1024,10 @@ tick_screen_func_t tick_screen_funcs[] = {
     uiSettingsTick,
     uiWifiFormTick,
     uiPlanTick,
+    uiRegulatorTick,
 };
 void tick_screen(int screen_index) {
-    if (screen_index >= 0 && screen_index < 4) {
+    if (screen_index >= 0 && screen_index < 5) {
         tick_screen_funcs[screen_index]();
     }
 }

@@ -65,32 +65,35 @@
 
 ### 4 — Připojení Bluetooth teploměru
 
-**Rozsah:** pokojová teplota (SwitchBot Meter Plus nebo ekvivalent), zobrazení na UI a v MQTT `tele/temp_room`.
+**Rozsah:** pokojová + venkovní teplota (2× SwitchBot Meter, stejný protokol), UI a MQTT `tele/temp_room` / `tele/temp_outdoor`.
 
-**Moduly:** `src/net/climate_ble_room.*`, `include/ble_config.h`
+**Moduly:** `src/net/climate_ble_room.*`, `include/ble_config.h` (`BLE_METER_MAC`, `BLE_OUTDOOR_MAC`)
 
-**Hotovo když:** `teplota_vnitrni` spolehlivě aktualizovaná, `sig_ble` odpovídá realitě.
+**Hotovo když:** oba senzory se čtou v jednom scan cyklu; `sig_ble` = pokoj OK.
 
 | Stav | Poznámka |
 |------|----------|
-| 🟡 Částečně | BLE sken na ESP32-S3 (nativní, bez Tab5 SDIO arbitru) |
-| 🟡 Částečně | UI `teplota_vnitrni`, `sig_ble` |
-| 🔲 Zbývá | dlouhodobá spolehlivost skenu, kalibrace, chování při výpadku senzoru |
+| ✅ Hotovo | Dual SwitchBot scan (Wi‑Fi suspend → NimBLE → resume) |
+| ✅ Hotovo | `teplota_vnitrni` / `teplota_venkovni` z BLE (ne LIN A0 B5) |
+| 🔲 Zbývá | doplnit reálnou `BLE_OUTDOOR_MAC`, dlouhodobá spolehlivost |
 
 ---
 
 ### 5 — Adaptivní PID termostat
 
-**Rozsah:** regulace podle pokojové teploty (režim Auto), adaptivní PID, bezpečné limity, zápis setpointu přes LIN frontu.
+**Rozsah:** režim Auto — ekviterm (venkovní BLE) + PID trim podle pokoje; akční veličina **0–100 %** mapovaná na SP vody **25–45 °C**; obrazovka grafu/PID.
 
-**Moduly:** zatím spíš v původním `LG_Therma` (`climate_scheduler`); na 7B **nezačato**.
+**Moduly:** `src/climate/climate_regulator.*`, `src/ui/ui_eez_regulator.*`, NVS `reg_cfg`, hook v `uiBusBindingsTick`
 
-**Hotovo když:** Auto drží pokojovou T bez ručního zásahu, přechody režimů bezpečné.
+**Hotovo když:** Auto drží pokojovou T (default 22 °C), plán UTLUM snižuje pokojový SP, VYP stopuje.
 
 | Stav | Poznámka |
 |------|----------|
-| 🔲 Nezačato | primárně režim výstupní teploty / ruční setpoint |
-| 🔲 Nezačato | návrh PID, zdroj teploty (BLE vs. ruční), integrace s `ui_bus_bindings` |
+| ✅ Hotovo | Ekviterm −15 °C→100 % / 15 °C→0 %, PID trim ±25 %, bias adaptace |
+| ✅ Hotovo | Režim **PID only** (bez ekvitermy / venkovního T) — testování |
+| ✅ Hotovo | Auto: ± / MQTT = pokojový SP; ruční = voda 25–45 |
+| ✅ Hotovo | Obrazovka Nastavení → Regulator (graf + Kp/Ki/Kd/křivka) |
+| 🔲 Zbývá | ladění zisků na reálném TČ, outdoor MAC |
 
 ---
 
@@ -119,7 +122,7 @@
 | M4 | 5 | adaptivní PID Auto |
 | M5 | 6 | PWA pro vzdálené ovládání |
 
-**Aktuální pozice (2026-02):** M1–M2 hotové, M3 částečně, M4–M5 před námi.
+**Aktuální pozice (2026-08):** M1–M3 hotové (outdoor MAC doplnit), M4 implementováno ve FW, M5 před námi.
 
 ---
 

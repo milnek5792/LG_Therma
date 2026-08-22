@@ -13,6 +13,7 @@ enum FlowGlobalVariables {
 };
 extern const char *get_var_teplota_vody_set();
 extern void set_var_teplota_vody_set(float value);
+extern const char *get_var_teplota_vody_set_lin();
 extern const char *get_var_teplota_vody_vstup();
 extern void set_var_teplota_vody_vstup(float value);
 extern const char *get_var_teplota_vody_vystup();

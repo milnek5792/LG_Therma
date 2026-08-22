@@ -4,6 +4,7 @@
 #include "ui_eez_settings.h"
 #include "ui_eez_wifi_form.h"
 #include "ui_eez_plan.h"
+#include "ui_eez_regulator.h"
 #include "ui_eez_images.h"
 #include "ui_eez_actions.h"
 #include "ui_eez_vars.h"
@@ -34,6 +35,9 @@ static lv_obj_t* getLvglObjectFromIndex(int32_t index) {
   }
   if (index == 3) {
     return uiPlanScreen();
+  }
+  if (index == 4) {
+    return uiRegulatorScreen();
   }
   return nullptr;
 }
@@ -121,6 +125,9 @@ void ui_tick() {
     case UI_AKCE_SETTINGS_PLAN:
       uiNavigateTo(SCREEN_ID_PLAN);
       break;
+    case UI_AKCE_SETTINGS_SERVIS:
+      uiNavigateTo(SCREEN_ID_REGULATOR);
+      break;
     case UI_AKCE_PLAN_BACK:
       uiNavigateTo(SCREEN_ID_SETTINGS);
       break;
@@ -134,6 +141,7 @@ void ui_tick() {
     case UI_AKCE_STOP:
     case UI_AKCE_TEPLOTA_PLUS:
     case UI_AKCE_TEPLOTA_MINUS:
+    case UI_AKCE_REZIM_PREPNOUT:
       uiBusHandleAkce(akce);
       break;
     default:

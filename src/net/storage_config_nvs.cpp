@@ -1,6 +1,7 @@
 #include "storage_config_nvs.h"
 
 #include "climate_plan.h"
+#include "climate_regulator.h"
 
 #include <Preferences.h>
 #include <string.h>
@@ -18,11 +19,14 @@ constexpr const char* kKeyMqttEn = "mqtt_en";
 constexpr const char* kKeyBlPct = "bl_pct";
 constexpr const char* kKeyBlSleep = "bl_sleep";
 constexpr const char* kKeyPlan = "plan_cfg";
+constexpr const char* kKeyReg = "reg_cfg";
 constexpr uint32_t kPlanMagic = 0x504C414Eu;
 /** Bump jen při změně layoutu PlanTydenConfig — ne při změně výchozích hodnot. */
 constexpr uint16_t kPlanVersion = 4;
 /** Nejstarší verze se stejným binárním layoutem (včetně cas_rezim). */
 constexpr uint16_t kPlanVersionMinCompat = 2;
+constexpr uint32_t kRegMagic = 0x52454731u;  // REG1
+constexpr uint16_t kRegVersion = 2;
 
 void ensureOpen() {
   if (!s_open) {
@@ -158,4 +162,41 @@ void storageSavePlanConfig(const PlanTydenConfig* cfg) {
   memcpy(buf + 4, &kPlanVersion, 2);
   memcpy(buf + 6, cfg, sizeof(PlanTydenConfig));
   s_prefs.putBytes(kKeyPlan, buf, sizeof(buf));
+}
+
+bool storageLoadRegulatorConfig(RegulatorConfig* cfg) {
+  if (!cfg) {
+    return false;
+  }
+  ensureOpen();
+  size_t len = s_prefs.getBytesLength(kKeyReg);
+  if (len < sizeof(RegulatorConfig) + 6) {
+    return false;
+  }
+  uint8_t buf[sizeof(RegulatorConfig) + 8];
+  const size_t got = s_prefs.getBytes(kKeyReg, buf, sizeof(buf));
+  if (got < 6 + sizeof(RegulatorConfig)) {
+    return false;
+  }
+  uint32_t magic = 0;
+  uint16_t version = 0;
+  memcpy(&magic, buf, 4);
+  memcpy(&version, buf + 4, 2);
+  if (magic != kRegMagic || version < 1) {
+    return false;
+  }
+  memcpy(cfg, buf + 6, sizeof(RegulatorConfig));
+  return true;
+}
+
+void storageSaveRegulatorConfig(const RegulatorConfig* cfg) {
+  if (!cfg) {
+    return;
+  }
+  ensureOpen();
+  uint8_t buf[6 + sizeof(RegulatorConfig)];
+  memcpy(buf, &kRegMagic, 4);
+  memcpy(buf + 4, &kRegVersion, 2);
+  memcpy(buf + 6, cfg, sizeof(RegulatorConfig));
+  s_prefs.putBytes(kKeyReg, buf, sizeof(buf));
 }

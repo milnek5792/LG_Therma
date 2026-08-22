@@ -1,5 +1,6 @@
 #include "climate_plan.h"
 
+#include "climate_regulator.h"
 #include "storage_config_nvs.h"
 #include "ui_bus_bindings.h"
 #include "ui_eez_model.h"
@@ -79,6 +80,16 @@ void ulozZakladniStav() {
 }
 
 void obnovZakladniStav() {
+  if (uiEez.rezim == UI_REZIM_AUTO) {
+    climateRegulatorSetPlanRoomOffset(0.0f);
+    climateRegulatorSetPlanStop(false);
+    if (s_zakladniZapnuto) {
+      uiBusPlanApplyStart();
+    } else {
+      uiBusPlanApplyStop();
+    }
+    return;
+  }
   if (s_zakladniZapnuto) {
     uiBusPlanApplySetpoint(s_zakladniTeplota);
     uiBusPlanApplyStart();
@@ -88,6 +99,30 @@ void obnovZakladniStav() {
 }
 
 void aplikujAkci(PlanAkce akce, uint8_t utlumStupne) {
+  if (uiEez.rezim == UI_REZIM_AUTO) {
+    switch (akce) {
+      case PLAN_AKCE_VYP:
+        climateRegulatorSetPlanStop(true);
+        climateRegulatorSetPlanRoomOffset(0.0f);
+        uiBusPlanApplyStop();
+        break;
+      case PLAN_AKCE_UTLUM:
+        climateRegulatorSetPlanStop(false);
+        climateRegulatorSetPlanRoomOffset(-(float)utlumStupne);
+        if (s_zakladniZapnuto) {
+          uiBusPlanApplyStart();
+        }
+        break;
+      case PLAN_AKCE_NORMAL:
+      default:
+        climateRegulatorSetPlanStop(false);
+        climateRegulatorSetPlanRoomOffset(0.0f);
+        obnovZakladniStav();
+        break;
+    }
+    return;
+  }
+
   switch (akce) {
     case PLAN_AKCE_VYP:
       uiBusPlanApplyStop();
@@ -277,6 +312,10 @@ void climatePlanTick(void) {
   const uint32_t nowMs = millis();
 
   if (!g_planConfig.aktivni || !uiEez.cas_platny) {
+    if (uiEez.rezim == UI_REZIM_AUTO) {
+      climateRegulatorSetPlanRoomOffset(0.0f);
+      climateRegulatorSetPlanStop(false);
+    }
     if (s_planOvlada) {
       obnovZakladniStav();
       s_planOvlada = false;

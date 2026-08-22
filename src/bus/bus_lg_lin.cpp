@@ -54,6 +54,7 @@ void lgBusTick() {
       mVystupni = bufferLg[12];
 
       if (!pozadavekNaZapis) {
+        // Živý SP z TČ (A0 B8) — UI ukazuje skutečnost, ne náš command
         mCilova = bufferLg[8];
         stavZapnuto = lgTcBeziNaSbernici(bufferLg[2], bufferLg[3]);
       }
@@ -64,7 +65,7 @@ void lgBusTick() {
                bliknuti ? "*" : " ", lgPocetPaketu(),
                monitorPozastaven ? " PAUZA" : "",
                soloRezimTab5 ? " SOLO" : "",
-               drzetStavProtiOrig ? " DRZET" : "",
+               parallelRezimTab5 ? " PARALLEL" : "",
                cekameNaOrigStart ? " ORIG?" : (origOvladacDetekovan ? " ORIG!" : ""));
       snprintf(posledniStavovyText, sizeof(posledniStavovyText), "%s", a0StavovyText);
       potrebaObnovitDisplej = true;

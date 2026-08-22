@@ -5,6 +5,7 @@
 #include "bus_lg_model.h"
 #include "bus_lg_protocol.h"
 #include "climate_plan.h"
+#include "climate_regulator.h"
 #include "ui_eez_model.h"
 
 #include <Arduino.h>
@@ -14,16 +15,59 @@ namespace {
 
 static const char* TAG = "UI_BUS";
 
+constexpr uint8_t kWaterMinC = REG_T_WATER_MIN_C;
+constexpr uint8_t kWaterMaxC = REG_T_WATER_MAX_C;
+
+const char* spSrcName(UiSpSource src) {
+  switch (src) {
+    case UI_SP_SRC_HMI:
+      return "HMI";
+    case UI_SP_SRC_MQTT:
+      return "MQTT";
+    case UI_SP_SRC_REGULATOR:
+      return "REG";
+    case UI_SP_SRC_PLAN:
+      return "PLAN";
+    default:
+      return "?";
+  }
+}
+
+/** Varianta A: Auto → jen regulátor; ruční → HMI / MQTT / plán. */
+bool allowWaterSpWrite(UiSpSource src) {
+  if (uiEez.rezim == UI_REZIM_AUTO) {
+    return src == UI_SP_SRC_REGULATOR;
+  }
+  return src == UI_SP_SRC_HMI || src == UI_SP_SRC_MQTT || src == UI_SP_SRC_PLAN;
+}
+
+/** Pokojový SP: HMI nebo MQTT (last-write-wins). */
+bool allowRoomSpWrite(UiSpSource src) {
+  return src == UI_SP_SRC_HMI || src == UI_SP_SRC_MQTT;
+}
+
+uint8_t clampWaterC(int t) {
+  if (t < (int)kWaterMinC) {
+    return kWaterMinC;
+  }
+  if (t > (int)kWaterMaxC) {
+    return kWaterMaxC;
+  }
+  return (uint8_t)t;
+}
+
 uint8_t aktualniCilovaTeplota() {
   uint8_t t = pozadavekNaZapis ? novaCilovaTeplota : mCilova;
-  if (t < 15) {
+  if (t < kWaterMinC || t > kWaterMaxC) {
     t = mCilova;
   }
-  if (t < 15) {
+  if (t < kWaterMinC || t > kWaterMaxC) {
     const int fromUi = (int)(uiEez.teplota_vody_set + 0.5f);
-    t = (fromUi >= 15 && fromUi <= 65) ? (uint8_t)fromUi : 40;
+    t = (fromUi >= (int)kWaterMinC && fromUi <= (int)kWaterMaxC)
+            ? (uint8_t)fromUi
+            : 35;
   }
-  return t;
+  return clampWaterC(t);
 }
 
 bool drzenyZapnuty() {
@@ -56,6 +100,13 @@ void provedStart() {
   uint8_t t = aktualniCilovaTeplota();
   lgModelUnlock();
 
+  // Auto: START s cílem regulátoru, ne se starým ručním SP z HMI/A0
+  if (uiEez.rezim == UI_REZIM_AUTO) {
+    RegulatorSnapshot snap{};
+    climateRegulatorGetSnapshot(&snap);
+    t = snap.t_water_c;
+  }
+
   if (uzDrzeny || tcBezi) {
     ESP_LOGI(TAG, "START ignorovan — uz zapnuto");
     return;
@@ -66,20 +117,18 @@ void provedStart() {
   }
 
   lgModelLock();
-  t = aktualniCilovaTeplota();
   novaCilovaTeplota = t;
   mCilova = t;
   tcPozadavekZap = true;
   lgNastavDrzenyStav(t, true);
   lgModelUnlock();
 
-  // UI hned — čerpadlo / A0 může přijít se zpožděním
   uiEez.sig_chod = true;
   uiEez.stav_tc = UI_STAV_PRESTART;
-  uiEez.teplota_vody_set = (float)t;
 
   provedZapisTeploty(t, true, true);
-  ESP_LOGI(TAG, "START T=%u (SOLO, drzeny ON)", (unsigned)t);
+  ESP_LOGI(TAG, "START T=%u (session ON)%s", (unsigned)t,
+           uiEez.rezim == UI_REZIM_AUTO ? " Auto" : "");
 }
 
 void provedStartStopToggle() {
@@ -90,20 +139,61 @@ void provedStartStopToggle() {
   }
 }
 
-void provedTeplotaAbsolutni(uint8_t nova) {
-  if (nova < 15 || nova > 65) {
+void provedTeplotaAbsolutni(uint8_t nova, UiSpSource src) {
+  nova = clampWaterC(nova);
+  if (!allowWaterSpWrite(src)) {
+    ESP_LOGW(TAG, "SP vody %u blokovan (src=%s rezim=%s)", (unsigned)nova,
+             spSrcName(src),
+             uiEez.rezim == UI_REZIM_AUTO ? "AUTO" : "MAN");
     return;
   }
+
+  // Ruční HMI/MQTT: command-first inkrement, zápis až na dalším A0 (původní chování)
+  if (uiEez.rezim != UI_REZIM_AUTO &&
+      (src == UI_SP_SRC_HMI || src == UI_SP_SRC_MQTT)) {
+    if (!drzenyZapnuty() && !stavZapnuto) {
+      ESP_LOGW(TAG, "SP vody %u ignorovan — nejdriv START (src=%s)", (unsigned)nova,
+               spSrcName(src));
+      return;
+    }
+
+    lgModelLock();
+    novaCilovaTeplota = nova;
+    mCilova = nova;
+    if (drzetStavAktivni) {
+      cilovaTeplotaTab5 = nova;
+    }
+    lgModelUnlock();
+
+    uiEez.teplota_vody_set = (float)nova;
+    ESP_LOGI(TAG, "setpoint cmd -> %u C src=%s (ceka A0)", (unsigned)nova,
+             spSrcName(src));
+
+    pozadavekNaZapis = true;
+    pozadavekZmenaStartu = false;
+    return;
+  }
+
+  const bool zap = drzenyZapnuty() || stavZapnuto ||
+                   lgJeTcProvoz(lgModelA0Bajt(2), lgModelA0Bajt(3));
+
   lgModelLock();
   novaCilovaTeplota = nova;
   mCilova = nova;
-  const bool zap = drzenyZapnuty() || stavZapnuto;
+  if (drzetStavAktivni || zap) {
+    lgNastavDrzenyStav(nova, zap || cilovyZapnutoTab5);
+  }
   lgModelUnlock();
 
-  uiEez.teplota_vody_set = (float)nova;
-  ESP_LOGI(TAG, "setpoint -> %u C zap=%d", (unsigned)nova, (int)zap);
+  ESP_LOGI(TAG, "setpoint cmd -> %u C src=%s zap=%d auto=%d", (unsigned)nova,
+           spSrcName(src), (int)zap, (int)(uiEez.rezim == UI_REZIM_AUTO));
 
-  // SOLO: hned TX — nečekej na další A0 (jinak +- / MQTT „nefunguje“)
+  // Auto + T/C neběží: jen cmd pro další START (bez LIN VYP paketu)
+  if (uiEez.rezim == UI_REZIM_AUTO && !zap) {
+    ESP_LOGI(TAG, "Auto SP %u C — bez LIN (T/C nebezi)", (unsigned)nova);
+    return;
+  }
+
   if (soloRezimTab5) {
     if (lgZapisBezi()) {
       pozadavekNaZapis = true;
@@ -121,15 +211,35 @@ void provedTeplotaAbsolutni(uint8_t nova) {
   pozadavekZmenaStartu = false;
 }
 
-void provedTeplotaZmena(int delta) {
+void provedTeplotaZmena(int delta, UiSpSource src) {
   lgModelLock();
   const uint8_t aktualniCilova = aktualniCilovaTeplota();
   const int nova = (int)aktualniCilova + delta;
   lgModelUnlock();
-  if (nova < 15 || nova > 65) {
+  if (nova < (int)kWaterMinC || nova > (int)kWaterMaxC) {
     return;
   }
-  provedTeplotaAbsolutni((uint8_t)nova);
+  provedTeplotaAbsolutni((uint8_t)nova, src);
+}
+
+void provedRoomSpZmena(int delta, UiSpSource src) {
+  if (!allowRoomSpWrite(src)) {
+    ESP_LOGW(TAG, "room SP adjust blokovan (src=%s)", spSrcName(src));
+    return;
+  }
+  climateRegulatorAdjustRoomSp((float)delta);
+  ESP_LOGI(TAG, "Auto room SP -> %.1f (src=%s)",
+           (double)climateRegulatorGetConfig()->room_sp_c, spSrcName(src));
+}
+
+void provedRoomSpAbs(float c, UiSpSource src) {
+  if (!allowRoomSpWrite(src)) {
+    ESP_LOGW(TAG, "room SP abs blokovan (src=%s)", spSrcName(src));
+    return;
+  }
+  climateRegulatorSetRoomSp(c);
+  ESP_LOGI(TAG, "Auto room SP abs -> %.1f (src=%s)",
+           (double)climateRegulatorGetConfig()->room_sp_c, spSrcName(src));
 }
 
 enum class PendingCmd : uint8_t {
@@ -150,6 +260,7 @@ void applyPendingFromMqtt() {
   }
   s_pending = PendingCmd::None;
   const int val = s_pendingVal;
+  const bool autoMode = (uiEez.rezim == UI_REZIM_AUTO);
 
   switch (cmd) {
     case PendingCmd::Start:
@@ -161,12 +272,19 @@ void applyPendingFromMqtt() {
       provedStop();
       break;
     case PendingCmd::SetAbs:
-      ESP_LOGI(TAG, "MQTT queue → setpoint %d", val);
-      provedTeplotaAbsolutni((uint8_t)val);
+      if (autoMode) {
+        // Auto: mobil mění jen pokojový SP, ne vodu
+        provedRoomSpAbs((float)val, UI_SP_SRC_MQTT);
+      } else {
+        provedTeplotaAbsolutni((uint8_t)val, UI_SP_SRC_MQTT);
+      }
       break;
     case PendingCmd::Adjust:
-      ESP_LOGI(TAG, "MQTT queue → adjust %+d", val);
-      provedTeplotaZmena(val);
+      if (autoMode) {
+        provedRoomSpZmena(val, UI_SP_SRC_MQTT);
+      } else {
+        provedTeplotaZmena(val, UI_SP_SRC_MQTT);
+      }
       break;
     default:
       break;
@@ -187,22 +305,62 @@ void uiBusHandleAkce(UiAkceTlacitko akce) {
       provedStartStopToggle();
       break;
     case UI_AKCE_TEPLOTA_PLUS:
-      provedTeplotaZmena(1);
+      if (uiEez.rezim == UI_REZIM_AUTO) {
+        provedRoomSpZmena(1, UI_SP_SRC_HMI);
+      } else {
+        provedTeplotaZmena(1, UI_SP_SRC_HMI);
+      }
       break;
     case UI_AKCE_TEPLOTA_MINUS:
-      provedTeplotaZmena(-1);
+      if (uiEez.rezim == UI_REZIM_AUTO) {
+        provedRoomSpZmena(-1, UI_SP_SRC_HMI);
+      } else {
+        provedTeplotaZmena(-1, UI_SP_SRC_HMI);
+      }
+      break;
+    case UI_AKCE_REZIM_PREPNOUT:
+      if (uiEez.rezim == UI_REZIM_AUTO) {
+        uiEez.rezim = UI_REZIM_VYSTUPNI_TEPLOTA;
+        // Session SP = aktuální A0
+        lgModelLock();
+        {
+          const uint8_t a0Sp = lgModelA0Bajt(8);
+          if (a0Sp >= 15 && a0Sp <= 65) {
+            mCilova = a0Sp;
+            if (drzetStavAktivni) {
+              cilovaTeplotaTab5 = a0Sp;
+            }
+          }
+        }
+        lgModelUnlock();
+      } else {
+        uiEez.rezim = UI_REZIM_AUTO;
+        RegulatorSnapshot snap{};
+        climateRegulatorGetSnapshot(&snap);
+        provedTeplotaAbsolutni(snap.t_water_c, UI_SP_SRC_REGULATOR);
+      }
+      ESP_LOGI(TAG, "rezim -> %s",
+               uiEez.rezim == UI_REZIM_AUTO ? "AUTO" : "VYSTUPNI");
       break;
     default:
       break;
   }
 }
 
+void uiBusSetWaterSp(uint8_t teplotaC, UiSpSource src) {
+  provedTeplotaAbsolutni(teplotaC, src);
+}
+
 void uiBusSetSetpointC(uint8_t teplotaC) {
-  provedTeplotaAbsolutni(teplotaC);
+  provedTeplotaAbsolutni(teplotaC, UI_SP_SRC_REGULATOR);
 }
 
 void uiBusAdjustSetpoint(int deltaC) {
-  provedTeplotaZmena(deltaC);
+  if (uiEez.rezim == UI_REZIM_AUTO) {
+    provedRoomSpZmena(deltaC, UI_SP_SRC_HMI);
+  } else {
+    provedTeplotaZmena(deltaC, UI_SP_SRC_HMI);
+  }
 }
 
 void uiBusQueuePower(bool start) {
@@ -229,11 +387,13 @@ void uiBusPlanApplyStop(void) {
 }
 
 void uiBusPlanApplySetpoint(uint8_t teplotaC) {
-  provedTeplotaAbsolutni(teplotaC);
+  // Auto: plán nesmí měnit SP vody (jen offset/VYP přes climate_plan)
+  provedTeplotaAbsolutni(teplotaC, UI_SP_SRC_PLAN);
 }
 
 void uiBusBindingsTick(void) {
   applyPendingFromMqtt();
   climatePlanTick();
+  climateRegulatorTick();
   uiEezSyncFromBus();
 }

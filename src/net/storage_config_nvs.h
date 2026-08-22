@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "climate_plan.h"
+#include "climate_regulator.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,6 +29,9 @@ void storageSaveSleepTimeoutSec(uint32_t sec);
 
 bool storageLoadPlanConfig(PlanTydenConfig* cfg);
 void storageSavePlanConfig(const PlanTydenConfig* cfg);
+
+bool storageLoadRegulatorConfig(RegulatorConfig* cfg);
+void storageSaveRegulatorConfig(const RegulatorConfig* cfg);
 
 #ifdef __cplusplus
 }

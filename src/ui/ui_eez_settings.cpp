@@ -307,7 +307,7 @@ void uiSettingsCreate() {
       "Casovy plan", action_akce_settings_plan, kColPurple);
   settingsObj.btn_servis = makeButton(
       settingsObj.panel_sys, kPad + 2 * (threeW + kGap), rowY, threeW, kBtnH,
-      "Servis", action_akce_settings_servis, kColPurple);
+      "Regulator", action_akce_settings_servis, kColPurple);
 
   strncpy(uiEez.set_sys_hint, "Cekam na senzor...", sizeof(uiEez.set_sys_hint) - 1);
   uiEez.set_sys_hint[sizeof(uiEez.set_sys_hint) - 1] = '\0';

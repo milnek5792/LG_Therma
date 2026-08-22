@@ -15,7 +15,8 @@ bool lgZapisBezi();
 void nastavMonitorPozastaven(bool pauza);
 void prepniMonitorPozastaven();
 void prepniSoloRezim();
-void prepniDrzetStav();
+void prepniParallelRezim();
+void prepniDrzetStav();  // alias → prepniParallelRezim
 
 void lgNastavDrzenyStav(uint8_t teplota, bool zapnuto);
 void lgZrusCekaniOrig(const char* duvod);

@@ -19,7 +19,9 @@ extern bool bliknuti;
 extern bool monitorPozastaven;
 extern bool origOvladacDetekovan;
 extern bool soloRezimTab5;
-extern bool drzetStavProtiOrig;
+/** PARALLEL: Tab + drátový ovladač na jedné lince (dříve „DRZET proti orig.“). */
+extern bool parallelRezimTab5;
+/** Session po našem START/STOP — držíme power cmd (ne nutně SP proti A0). */
 extern bool drzetStavAktivni;
 extern bool cilovyZapnutoTab5;
 extern bool cekameNaOrigStart;

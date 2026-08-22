@@ -8,8 +8,9 @@ Waveshare **ESP32-S3-Touch-LCD-7B** port of LG Therma HMI.
 - UI: LVGL 9.2 + EEZ scaled **1280×720 → 1024×600**
 - LIN: LG protokol přes UART header (DIP UART2)
 - Síť: Wi‑Fi, NTP, MQTT TLS (EMQX), watch + telemetrie
-- BLE: SwitchBot pokojový teploměr (částečně)
-- PID Auto, PWA: plánováno — viz [docs/PLAN.md](docs/PLAN.md)
+- BLE: 2× SwitchBot (pokoj + venkovní MAC v `ble_config.h`)
+- PID Auto + ekviterm (0–100 % → SP vody 25–45 °C) — viz [docs/PLAN.md](docs/PLAN.md)
+- PWA: plánováno
 
 ## Plán projektu
 
@@ -20,8 +21,8 @@ Kompletní etapy a milníky: **[docs/PLAN.md](docs/PLAN.md)**
 | 1 | LG protokol / LIN | hotovo |
 | 2 | UI na 7B | hotovo |
 | 3 | Wi‑Fi, NTP, MQTT | hotovo |
-| 4 | BLE teploměr | částečně |
-| 5 | Adaptivní PID | plánováno |
+| 4 | BLE teploměry (pokoj + venkovní) | hotovo (doplnit outdoor MAC) |
+| 5 | Adaptivní PID + ekviterm | hotovo ve FW |
 | 6 | PWA dálkové ovládání | plánováno |
 
 ## Build

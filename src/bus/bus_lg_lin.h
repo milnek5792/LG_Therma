@@ -48,6 +48,8 @@ static bool mamePosledniNasTx = false;
 
 struct LgZapisFronta {
   bool aktivni = false;
+  /** true = START/STOP sekvence (PRESTART); false = jen zmena teploty (+/-) */
+  bool jeStartSekvence = false;
   uint8_t krok = 0;
   uint8_t opakovani = 0;
   uint8_t pocetKroku = 0;
@@ -135,6 +137,7 @@ void lgZapisNaplnStartKroky(uint8_t teplota) {
 
 void lgZapisSpustDrzetPriprava(uint8_t teplota) {
   lgZapis.aktivni = false;
+  lgZapis.jeStartSekvence = true;
   lgZapis.krok = 0;
   lgZapis.pocetKroku = 0;
   lgZapis.cekaA0Start = false;
@@ -168,6 +171,7 @@ void lgZapisRestartStartOdKroku1(const char* duvod) {
   lgZapis.krok = 0;
   lgZapis.cekaA0Start = false;
   lgZapis.videnPrestartB3 = false;
+  lgZapis.jeStartSekvence = true;
   lgZapis.opakovani = 1;
   lgZapisNaplnStartKroky(lgZapis.startTeplota);
   lgZapis.aktivni = true;
@@ -190,8 +194,8 @@ inline const char* lgPopisTcB3(uint8_t b3) {
 void prepniSoloRezim() {
   soloRezimTab5 = !soloRezimTab5;
   Serial.println(soloRezimTab5
-    ? "\n[SOLO] ZAP — Tab5 smi posilat na sbernici (nezavisle na DRZET)"
-    : "\n[SOLO] VYP — rucni TX vypnut (DRZET muze stale posilat obnovu)");
+    ? "\n[SOLO] ZAP — Tab5 smi posilat na sbernici (nezavisle na PARALLEL)"
+    : "\n[SOLO] VYP — rucni TX vypnut (PARALLEL muze stale posilat obnovu)");
 }
 
 void lgNastavDrzenyStav(uint8_t teplota, bool zapnuto) {
@@ -204,14 +208,18 @@ void lgZrusDrzenyStav() {
   drzetStavAktivni = false;
 }
 
-void prepniDrzetStav() {
-  drzetStavProtiOrig = !drzetStavProtiOrig;
-  if (!drzetStavProtiOrig) {
+void prepniParallelRezim() {
+  parallelRezimTab5 = !parallelRezimTab5;
+  if (!parallelRezimTab5) {
     lgZrusDrzenyStav();
   }
-  Serial.println(drzetStavProtiOrig
-    ? "\n[DRZET] ZAP — rucne obnovovani proti orig. (volitelne)"
-    : "\n[DRZET] VYP — rucne obnovovani vypnuto");
+  Serial.println(parallelRezimTab5
+    ? "\n[PARALLEL] ZAP — Tab + dratovy ovladac spolecne na lince"
+    : "\n[PARALLEL] VYP");
+}
+
+void prepniDrzetStav() {
+  prepniParallelRezim();
 }
 
 void lgDokoncStartOdOrig(const char* zdroj) {
@@ -272,7 +280,7 @@ void lgUkonciCekaniProStop() {
 void lgObsluhaCekaniOrig() {
   if (!cekameNaOrigStart) { return; }
   if (millis() - casCekaniOrigOdMs >= LG_ORIG_CEKANI_MAX_MS) {
-    Serial.println("[ORIG] stale cekame — orig. jeste neposlal C0 32/02/xx (DRZET bezi dal)");
+    Serial.println("[ORIG] stale cekame — orig. jeste neposlal C0 32/02/xx (session bezi dal)");
     casCekaniOrigOdMs = millis();
   }
 }
@@ -492,7 +500,7 @@ void lgOdesliC0Paket(uint8_t *paket) {
 
 #if LG_ODPOSLECH_BEZ_ZAPISU
   if (!lgSmiPosilatTx()) {
-    Serial.println("  (TX simulace — zapnete DRZET nebo SOLO)");
+    Serial.println("  (TX simulace — zapnete PARALLEL nebo SOLO)");
     return;
   }
   LG_Serial.write(paket, LG_PAKET_LEN);
@@ -537,7 +545,7 @@ void lgZapisSpust(uint8_t teplota, bool zapnuto, bool zmenaStartu) {
     return;
   }
 
-  if (zmenaStartu && drzetStavProtiOrig) {
+  if (zmenaStartu && parallelRezimTab5) {
     lgNastavDrzenyStav(teplota, zapnuto);
   }
 
@@ -549,6 +557,7 @@ void lgZapisSpust(uint8_t teplota, bool zapnuto, bool zmenaStartu) {
   lgZapis.casDalsiho = millis() + 120;
 
   if (zmenaStartu && zapnuto) {
+    lgZapis.jeStartSekvence = true;
     lgZapis.opakovani = 1;
     lgZapis.startPokus = 1;
     lgZapis.startTeplota = teplota;
@@ -559,17 +568,19 @@ void lgZapisSpust(uint8_t teplota, bool zapnuto, bool zmenaStartu) {
     Serial.println("  3) C0 32 B2=02 B3=02  (potvrzeni — JEN pokud B3=0x08!)");
     lgZapisNaplnStartKroky(teplota);
   } else if (zmenaStartu && !zapnuto) {
+    lgZapis.jeStartSekvence = true;
     lgZapis.opakovani = 2;
     Serial.println("[ZAPIS] STOP sekvence (jako orig.): 30/00/02 -> 30/00/00 x2");
     lgZapisPridatKrok(nullptr, teplota, 0x30, 0x00, 0x02);
     lgZapisPridatKrok(nullptr, teplota, 0x30, 0x00, 0x00);
   } else {
-    // Teplota: použij požadovaný stav (ne starý A0) — jinak +- při drženém ON pošle VYP
+    lgZapis.jeStartSekvence = false;
+    // Teplota: C0 32/02/02 vypada jako START potvrzeni — neni, necekat PRESTART
     uint8_t b2 = zapnuto ? 0x02 : 0x00;
     uint8_t b3 = zapnuto ? 0x02 : 0x00;
-    Serial.printf("[ZAPIS] Teplota=%u C (C0 32 B2=%02X B3=%02X)\n", teplota, b2, b3);
+    Serial.printf("[ZAPIS] Teplota=%u C (C0 32 B2=%02X B3=%02X) x2\n", teplota, b2, b3);
     lgZapisPridatKrok(nullptr, teplota, 0x32, b2, b3);
-    lgZapis.opakovani = 1;
+    lgZapis.opakovani = 2;
   }
 
   lgZapis.aktivni = (lgZapis.pocetKroku > 0);
@@ -578,7 +589,10 @@ void lgZapisSpust(uint8_t teplota, bool zapnuto, bool zmenaStartu) {
 static unsigned long lgPosledniStartRestartMs = 0;
 
 void lgReagujNaOrigStopBehemStartu(uint8_t *data, uint8_t delka) {
-  if (!lgZapis.aktivni || !lgZapis.cekaA0Start || delka < 2) { return; }
+  if (!lgZapis.aktivni || !lgZapis.jeStartSekvence || !lgZapis.cekaA0Start ||
+      delka < 2) {
+    return;
+  }
   if (data[0] != 0xC0 || lgJeToNasC0(data, delka)) { return; }
   if (data[1] != 0x30) { return; }
   if (millis() - lgPosledniStartRestartMs < 3000) { return; }
@@ -588,7 +602,10 @@ void lgReagujNaOrigStopBehemStartu(uint8_t *data, uint8_t delka) {
 }
 
 void lgKontrolujPrestartA0(uint8_t *data, uint8_t delka) {
-  if (!lgZapis.aktivni || !lgZapis.cekaA0Start || delka < 4 || data[0] != 0xA0) { return; }
+  if (!lgZapis.aktivni || !lgZapis.jeStartSekvence || !lgZapis.cekaA0Start ||
+      delka < 4 || data[0] != 0xA0) {
+    return;
+  }
   LgStartCekani vysledek = lgVyhodnotStartCekani(lgZapis.casCekaniStartOd);
   if (vysledek == LG_START_OPAK_KROK1) {
     if (millis() - lgPosledniStartRestartMs < 3000) { return; }
@@ -613,7 +630,7 @@ void lgReagujNaOrigC0(uint8_t *data, uint8_t delka) {
     return;
   }
 
-  if (!drzetStavProtiOrig || !lgSmiPosilatTx()) { return; }
+  if (!parallelRezimTab5 || !lgSmiPosilatTx()) { return; }
 
   bool origVyp = (data[1] == 0x30) || !lgJeZapnuto(data[3]);
   bool origZap = lgJeZapnuto(data[3]) && (data[1] == 0x32);
@@ -626,7 +643,7 @@ void lgReagujNaOrigC0(uint8_t *data, uint8_t delka) {
 
   if (millis() - casPosledniAutoObnova < LG_AUTO_OBNOVA_MIN_MS) { return; }
 
-  Serial.printf("\n[DRZET] Orig. poslal C0 0x%02X (%s) — odpovidame %s sekvenci\n",
+  Serial.printf("\n[PARALLEL] Orig. poslal C0 0x%02X (%s) — odpovidame %s sekvenci\n",
                 data[1], origVyp ? "STOP/VYP" : "stav",
                 cilovyZapnutoTab5 ? "START" : "STOP");
   lgZapisSpust(cilovaTeplotaTab5, cilovyZapnutoTab5, true);
@@ -638,7 +655,7 @@ void lgZkontrolujObnovuStavu(uint8_t *data, uint8_t delka) {
 
   if (data[0] == 0xC0 && !lgJeToNasC0(data, delka)) {
     lgReagujNaOrigStopBehemStartu(data, delka);
-    if (!drzetStavProtiOrig || !lgSmiPosilatTx()) { return; }
+    if (!parallelRezimTab5 || !lgSmiPosilatTx()) { return; }
     lgReagujNaOrigC0(data, delka);
     return;
   }
@@ -673,9 +690,13 @@ void lgZkontrolujObnovuStavu(uint8_t *data, uint8_t delka) {
 
   bool stavNaSbernici = lgJeTcProvoz(data[2], data[3]);
   bool cilStav = cilovyZapnutoTab5;
-  if (stavNaSbernici == cilStav) { return; }
+  // SP proti A0 se neobnovuje zde — UI ukazuje A0; Auto SP řeší regulátor.
+  // Session jen drží ON/OFF (po našem START/STOP).
+  if (stavNaSbernici == cilStav) {
+    return;
+  }
 
-  Serial.printf("\n[DRZET] A0 ukazuje %s, chceme %s — znovu odesilame\n",
+  Serial.printf("\n[SESSION] A0 ukazuje %s, chceme %s — znovu odesilame\n",
                 stavNaSbernici ? "ZAP" : "VYP", cilovyZapnutoTab5 ? "ZAP" : "VYP");
   lgZapisSpust(cilovaTeplotaTab5, cilovyZapnutoTab5, true);
   casPosledniAutoObnova = millis();
@@ -690,7 +711,7 @@ void lgZapisObsluha() {
     return;
   }
 
-  if (lgZapis.cekaA0Start) {
+  if (lgZapis.cekaA0Start && lgZapis.jeStartSekvence) {
     LgStartCekani vysledek = lgVyhodnotStartCekani(lgZapis.casCekaniStartOd);
     if (vysledek == LG_START_CEKA_DAL) {
       lgZapis.casDalsiho = millis() + 400;
@@ -718,7 +739,8 @@ void lgZapisObsluha() {
   uint8_t sentKrok = lgZapis.krok;
   uint8_t *pkt = lgZapis.pakety[sentKrok];
 
-  if (lgJeStartPotvrzeni(pkt) && !lgSmimePoslatStartPotvrzeni()) {
+  if (lgZapis.jeStartSekvence && lgJeStartPotvrzeni(pkt) &&
+      !lgSmimePoslatStartPotvrzeni()) {
     Serial.printf("[ZAPIS] BLOKOVANO potvrzeni — A0 B3=0x%02X (potreba 0x08 PRESTART)\n",
                   lgPosledniA0B3);
     lgZapis.krok = 0;
@@ -731,13 +753,15 @@ void lgZapisObsluha() {
   lgOdesliC0Paket(pkt);
   uint8_t *sent = pkt;
 
-  if (lgJeStartPotvrzeni(sent)) {
+  if (lgZapis.jeStartSekvence && lgJeStartPotvrzeni(sent)) {
     Serial.println("[ZAPIS] Potvrzeni START C0 32/02/02 odeslano");
   }
 
-  bool startKrok1 = lgJeStartPriprava(sent);
-  bool maStartKrok2 = (lgZapis.pocetKroku > sentKrok + 1 &&
-                       lgJeStartPotvrzeni(lgZapis.pakety[sentKrok + 1]));
+  bool startKrok1 = lgZapis.jeStartSekvence && lgJeStartPriprava(sent);
+  bool maStartKrok2 =
+      lgZapis.jeStartSekvence &&
+      (lgZapis.pocetKroku > sentKrok + 1 &&
+       lgJeStartPotvrzeni(lgZapis.pakety[sentKrok + 1]));
 
   if (startKrok1 && maStartKrok2) {
     lgZapis.cekaA0Start = true;
@@ -760,8 +784,9 @@ void lgZapisObsluha() {
   }
 
   unsigned long delayMs = LG_ZAPIS_MEZI_KROKY_MS;
-  if (sent[1] == 0x32 && sent[2] == 0x02 && sent[3] == 0x02 &&
-      lgZapis.krok >= lgZapis.pocetKroku && lgZapis.opakovani > 0) {
+  if (lgZapis.jeStartSekvence && sent[1] == 0x32 && sent[2] == 0x02 &&
+      sent[3] == 0x02 && lgZapis.krok >= lgZapis.pocetKroku &&
+      lgZapis.opakovani > 0) {
     delayMs = LG_START_OPAK_MS;
   }
 

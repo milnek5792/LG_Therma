@@ -2,6 +2,7 @@
 
 #include "net_sdio_arbiter.h"
 #include "ui_eez_plan.h"
+#include "ui_eez_regulator.h"
 #include "ui_eez_settings.h"
 #include "ui_eez_ui.h"
 #include "ui_eez_wifi_form.h"
@@ -17,14 +18,22 @@ void uiNavigateTo(enum ScreensEnum screenId) {
   netSdioBeginUiHeavyDefault();
   const bool leavingPlan =
       uiGetCurrentScreen() == SCREEN_ID_PLAN && screenId != SCREEN_ID_PLAN;
+  const bool leavingReg = uiGetCurrentScreen() == SCREEN_ID_REGULATOR &&
+                          screenId != SCREEN_ID_REGULATOR;
   if (leavingPlan) {
     uiPlanOnLeave();
+  }
+  if (leavingReg) {
+    uiRegulatorOnLeave();
   }
   if (screenId == SCREEN_ID_WIFI_SETUP) {
     uiWifiFormPrepare();
   }
   if (screenId == SCREEN_ID_PLAN) {
     uiPlanEnsureCreated();
+  }
+  if (screenId == SCREEN_ID_REGULATOR) {
+    uiRegulatorEnsureCreated();
   }
   loadScreen(screenId);
   uiLvglSetPointerInput(true);
@@ -52,4 +61,8 @@ bool uiIsWifiSetupScreen() {
 
 bool uiIsPlanScreen() {
   return uiGetCurrentScreen() == SCREEN_ID_PLAN;
+}
+
+bool uiIsRegulatorScreen() {
+  return uiGetCurrentScreen() == SCREEN_ID_REGULATOR;
 }

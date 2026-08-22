@@ -2,6 +2,8 @@
 #include "ui_eez_nav.h"
 #include "ui_eez_model.h"
 #include "ui_eez_screens.h"
+#include "ui_eez_fonts.h"
+#include "climate_regulator.h"
 #include "lg_lvgl.h"
 
 namespace {
@@ -12,12 +14,22 @@ constexpr uint32_t kOnGreen = 0x30D158u;
 constexpr uint32_t kOffColor = 0xAEAEB2u;
 constexpr uint32_t kOnOrange = 0xFF9F0Au;  // odmrazování + el. topení
 constexpr uint32_t kOnPurple = 0xBF5AF2u;  // MQTT watch — oko
+constexpr uint32_t kOnBlue = 0x0A84FFu;    // EKV (Auto + ekviterm)
 constexpr uint32_t kMuted = 0x8E8E93u;
 constexpr uint32_t kBtnBg = 0x1A1A1Fu;
 constexpr uint32_t kBtnBgOn = 0x14301Cu;
 
 constexpr int kEyeX = 710;
 constexpr int kEyeY = 14;
+// Za okem (MQTT watch) — režim regulace MAN / PID / EKV
+constexpr int kRegX = 760;
+constexpr int kRegY = 15;
+
+enum RegStatusKind : int8_t {
+  kRegMan = 0,
+  kRegPid = 1,
+  kRegEkv = 2,
+};
 
 struct SignalLedDef {
   lv_obj_t* (*getLed)();
@@ -41,6 +53,7 @@ lv_obj_t* lblOdmrazovani() { return objects.lbl_odmrazovani; }
 lv_obj_t* lblElTopeni() { return objects.lbl_el_topeni; }
 
 lv_obj_t* s_lblEye = nullptr;
+lv_obj_t* s_lblReg = nullptr;
 // Ploché tečky — lv_led stmavuje barvu (ne jako Wi‑Fi text)
 lv_obj_t* s_dots[5] = {};
 
@@ -124,6 +137,55 @@ static void applyEye(bool watching) {
                               LV_PART_MAIN | LV_STATE_DEFAULT);
 }
 
+static RegStatusKind currentRegStatus(void) {
+  if (uiEez.rezim != UI_REZIM_AUTO) {
+    return kRegMan;
+  }
+  return climateRegulatorUseEquitherm() ? kRegEkv : kRegPid;
+}
+
+static void ensureRegWidget(void) {
+  if (!objects.main || s_lblReg) {
+    return;
+  }
+  s_lblReg = lv_label_create(objects.main);
+  lv_obj_set_pos(s_lblReg, kRegX, kRegY);
+  lv_obj_set_style_text_font(s_lblReg, &ui_font_font_cs_24,
+                             LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_align(s_lblReg, LV_TEXT_ALIGN_LEFT,
+                              LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_remove_flag(s_lblReg, LV_OBJ_FLAG_CLICKABLE);
+  lv_label_set_text(s_lblReg, "MAN");
+  lv_obj_set_style_text_color(s_lblReg, lv_color_hex(kMuted),
+                              LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_move_foreground(s_lblReg);
+}
+
+static void applyRegStatus(void) {
+  if (!s_lblReg) {
+    return;
+  }
+  const RegStatusKind kind = currentRegStatus();
+  static int8_t s_last = -1;
+  if (s_last == (int8_t)kind) {
+    return;
+  }
+  s_last = (int8_t)kind;
+
+  const char* text = "MAN";
+  uint32_t col = kMuted;
+  if (kind == kRegPid) {
+    text = "PID";
+    col = kOnGreen;
+  } else if (kind == kRegEkv) {
+    text = "EKV";
+    col = kOnBlue;
+  }
+  lv_label_set_text(s_lblReg, text);
+  lv_obj_set_style_text_color(s_lblReg, lv_color_hex(col),
+                              LV_PART_MAIN | LV_STATE_DEFAULT);
+}
+
 }  // namespace
 
 void uiEezInitSignalLeds(void) {
@@ -132,6 +194,7 @@ void uiEezInitSignalLeds(void) {
   }
 
   ensureEyeWidget();
+  ensureRegWidget();
 
   size_t count = 0;
   const SignalLedDef* defs = signalDefs(&count);
@@ -196,4 +259,5 @@ void uiEezApplySignalLeds(void) {
 
   applyStartButton(uiEez.sig_chod);
   applyEye(uiEez.sig_remote);
+  applyRegStatus();
 }

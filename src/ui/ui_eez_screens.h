@@ -15,7 +15,8 @@ enum ScreensEnum {
     SCREEN_ID_SETTINGS = 2,
     SCREEN_ID_WIFI_SETUP = 3,
     SCREEN_ID_PLAN = 4,
-    _SCREEN_ID_LAST = 4
+    SCREEN_ID_REGULATOR = 5,
+    _SCREEN_ID_LAST = 5
 };
 
 typedef struct _objects_t {
@@ -36,6 +37,7 @@ typedef struct _objects_t {
     lv_obj_t *obj1;
     lv_obj_t *lbl_setpoint;
     lv_obj_t *lbl_setpoint_unit;
+    lv_obj_t *lbl_water_sp;       // Auto: malý aktuální SP vody
     lv_obj_t *btn_plus;
     lv_obj_t *obj2;
     lv_obj_t *panel_plan;

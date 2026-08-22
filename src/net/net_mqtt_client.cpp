@@ -6,6 +6,7 @@
 #include "net_ntp_time.h"
 #include "net_wifi_mgr.h"
 #include "climate_ble_room.h"
+#include "climate_regulator.h"
 #include "storage_config_nvs.h"
 #include "bus_lg_config.h"
 #include "bus_lg_model.h"
@@ -163,7 +164,6 @@ void snapLinTemps(float* inlet, float* outlet, float* outdoor, float* setp) {
   const bool maA0 = lgMaCerstoA0();
   const uint8_t in = mVstupni;
   const uint8_t out = mVystupni;
-  const uint8_t ven = lgModelA0Bajt(5);
   const uint8_t cil = pozadavekNaZapis ? novaCilovaTeplota : mCilova;
   lgModelUnlock();
 
@@ -174,11 +174,12 @@ void snapLinTemps(float* inlet, float* outlet, float* outdoor, float* setp) {
     *outlet = linTempOrNa(out, maA0);
   }
   if (outdoor) {
-    *outdoor = linTempOrNa(ven, maA0 && ven < 80);
+    // Venkovní z BLE (uiEez), ne LIN
+    *outdoor = uiEez.teplota_venkovni;
   }
   if (setp) {
     if (cil >= 15 && cil <= 65) {
-      *setp = (float)cil;  // live nebo last-known
+      *setp = (float)cil;
     } else {
       *setp = UI_TEPLOTA_NEPLATNA;
     }
@@ -686,9 +687,20 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
       }
     }
     const int sp = (int)(atof(msg) + 0.5f);
-    if (sp >= 15 && sp <= 65) {
+    if (uiEez.rezim == UI_REZIM_AUTO) {
+      // Varianta A: mobil v Auto mění jen pokojový SP (ne vodu)
+      if (sp >= 18 && sp <= 24) {
+        ESP_LOGI(TAG, "cmd/setpoint room %d (queue)", sp);
+        uiBusQueueSetpointC((uint8_t)sp);
+      } else {
+        ESP_LOGW(TAG, "cmd/setpoint %d v Auto ignorovan (jen pokoj 18–24)", sp);
+      }
+    } else if (sp >= REG_T_WATER_MIN_C && sp <= REG_T_WATER_MAX_C) {
       ESP_LOGI(TAG, "cmd/setpoint abs %d (queue)", sp);
       uiBusQueueSetpointC((uint8_t)sp);
+    } else {
+      ESP_LOGW(TAG, "cmd/setpoint %d mimo rozsah vody %d–%d", sp,
+               REG_T_WATER_MIN_C, REG_T_WATER_MAX_C);
     }
     return;
   }

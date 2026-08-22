@@ -2,6 +2,7 @@
 
 #include "climate_ble_room.h"
 #include "climate_plan.h"
+#include "climate_regulator.h"
 #include "net_mqtt_client.h"
 #include "net_ntp_time.h"
 #include "net_wifi_mgr.h"
@@ -109,6 +110,7 @@ void uiNetInit(void) {
   netMqttInit();
   climateBleInit();
   climatePlanInit();
+  climateRegulatorInit();
   uiNetSyncWifi();
 }
 
