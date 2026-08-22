@@ -5,6 +5,7 @@
 #include "ui_eez_actions.h"
 #include "ui_eez_fonts.h"
 #include "ui_eez_model.h"
+#include "app_cmd.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -101,12 +102,12 @@ void markDirty() { s_dirty = true; }
 
 void onBack(lv_event_t* e) {
   (void)e;
-  uiEez.akce_tlacitko = UI_AKCE_PLAN_BACK;
+  appCmdEnqueueHmi(UI_AKCE_PLAN_BACK);
 }
 
 void onModeToggle(lv_event_t* e) {
   (void)e;
-  uiEez.akce_tlacitko = UI_AKCE_REZIM_PREPNOUT;
+  appCmdEnqueueHmi(UI_AKCE_REZIM_PREPNOUT);
 }
 
 void onSave(lv_event_t* e) {

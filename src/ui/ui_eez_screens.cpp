@@ -807,12 +807,7 @@ void tick_screen_main() {
             lv_label_set_text(objects.lbl_mqtt, new_val);
             tick_value_change_obj = NULL;
         }
-        uint32_t col = 0x8e8e93u;
-        if (get_var_sig_mqtt()) {
-            col = 0x30d158u;
-        } else if (strstr(new_val, "...") != nullptr) {
-            col = 0xff9f0au;
-        }
+        uint32_t col = get_var_sig_mqtt_color();
         static uint32_t s_mqttCol = 0;
         if (s_mqttCol != col) {
             s_mqttCol = col;

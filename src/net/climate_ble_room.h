@@ -16,6 +16,8 @@ void climateBleRequestNow(void);
 
 bool climateBleIsOk(void);
 bool climateBleIsBusy(void);
+/** První scan po bootu ještě neproběhl — MQTT má počkat. */
+bool climateBleBootPollPending(void);
 float climateBleTempC(void);
 float climateBleHumidity(void);
 int climateBleBatteryPct(void);

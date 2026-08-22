@@ -1,6 +1,7 @@
 // ui_bus_bindings.cpp — EEZ akce → LIN zápis + sync model → UI
 #include "ui_bus_bindings.h"
 
+#include "app_cmd.h"
 #include "bus_lg_lin_api.h"
 #include "bus_lg_model.h"
 #include "bus_lg_protocol.h"
@@ -242,48 +243,33 @@ void provedRoomSpAbs(float c, UiSpSource src) {
            (double)climateRegulatorGetConfig()->room_sp_c, spSrcName(src));
 }
 
-enum class PendingCmd : uint8_t {
-  None = 0,
-  Start,
-  Stop,
-  SetAbs,
-  Adjust,
-};
-
-volatile PendingCmd s_pending = PendingCmd::None;
-volatile int s_pendingVal = 0;
-
-void applyPendingFromMqtt() {
-  const PendingCmd cmd = s_pending;
-  if (cmd == PendingCmd::None) {
-    return;
-  }
-  s_pending = PendingCmd::None;
-  const int val = s_pendingVal;
+void processAppMsg(const AppMsg& msg) {
   const bool autoMode = (uiEez.rezim == UI_REZIM_AUTO);
 
-  switch (cmd) {
-    case PendingCmd::Start:
-      ESP_LOGI(TAG, "MQTT queue → START");
+  switch (msg.cmd) {
+    case APP_CMD_HMI_ACTION:
+      uiBusHandleAkce(static_cast<UiAkceTlacitko>(msg.arg));
+      break;
+    case APP_CMD_POWER_START:
+      ESP_LOGI(TAG, "queue → START (src=%s)", spSrcName(msg.src));
       provedStart();
       break;
-    case PendingCmd::Stop:
-      ESP_LOGI(TAG, "MQTT queue → STOP");
+    case APP_CMD_POWER_STOP:
+      ESP_LOGI(TAG, "queue → STOP (src=%s)", spSrcName(msg.src));
       provedStop();
       break;
-    case PendingCmd::SetAbs:
+    case APP_CMD_SETPOINT_ABS:
       if (autoMode) {
-        // Auto: mobil mění jen pokojový SP, ne vodu
-        provedRoomSpAbs((float)val, UI_SP_SRC_MQTT);
+        provedRoomSpAbs((float)msg.arg, msg.src);
       } else {
-        provedTeplotaAbsolutni((uint8_t)val, UI_SP_SRC_MQTT);
+        provedTeplotaAbsolutni((uint8_t)msg.arg, msg.src);
       }
       break;
-    case PendingCmd::Adjust:
+    case APP_CMD_SETPOINT_DELTA:
       if (autoMode) {
-        provedRoomSpZmena(val, UI_SP_SRC_MQTT);
+        provedRoomSpZmena(msg.arg, msg.src);
       } else {
-        provedTeplotaZmena(val, UI_SP_SRC_MQTT);
+        provedTeplotaZmena(msg.arg, msg.src);
       }
       break;
     default:
@@ -364,18 +350,15 @@ void uiBusAdjustSetpoint(int deltaC) {
 }
 
 void uiBusQueuePower(bool start) {
-  s_pendingVal = 0;
-  s_pending = start ? PendingCmd::Start : PendingCmd::Stop;
+  appCmdEnqueuePower(start, UI_SP_SRC_MQTT);
 }
 
 void uiBusQueueSetpointC(uint8_t teplotaC) {
-  s_pendingVal = (int)teplotaC;
-  s_pending = PendingCmd::SetAbs;
+  appCmdEnqueueSetpointAbs((int)teplotaC, UI_SP_SRC_MQTT);
 }
 
 void uiBusQueueAdjustSetpoint(int deltaC) {
-  s_pendingVal = deltaC;
-  s_pending = PendingCmd::Adjust;
+  appCmdEnqueueAdjust(deltaC, UI_SP_SRC_MQTT);
 }
 
 void uiBusPlanApplyStart(void) {
@@ -392,8 +375,15 @@ void uiBusPlanApplySetpoint(uint8_t teplotaC) {
 }
 
 void uiBusBindingsTick(void) {
-  applyPendingFromMqtt();
+  appCmdDrainCtrl();
   climatePlanTick();
   climateRegulatorTick();
   uiEezSyncFromBus();
+}
+
+void uiBusProcessAppMsg(const AppMsg* msg) {
+  if (!msg) {
+    return;
+  }
+  processAppMsg(*msg);
 }

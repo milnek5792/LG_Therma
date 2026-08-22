@@ -38,6 +38,7 @@ uint32_t s_flushCount = 0;
 uint32_t s_rgbRestartCount = 0;
 volatile bool s_initDone = false;
 volatile bool s_frozen = false;
+bool s_displayLite = false;
 bool s_pointerInput = true;
 bool s_touchArmed = false;
 int s_horRes = 0;
@@ -396,6 +397,7 @@ void uiLvglSetFrozen(bool frozen) {
   }
   s_frozen = frozen;
   s_frozenSinceMs = frozen ? millis() : 0;
+  uiLvglSetRgbLowBandwidth(frozen);
   if (!frozen && s_wasFrozen) {
     // Po Wi-Fi/MQTT/BLE špičce — soft + hard (posun FB vsync často nechytí)
     uiLvglScheduleRecover("unfreeze", false, 80);
@@ -405,6 +407,7 @@ void uiLvglSetFrozen(bool frozen) {
 }
 
 bool uiLvglIsFrozen() { return s_frozen; }
+bool uiLvglIsDisplayLite() { return s_displayLite; }
 void uiLvglSetSdioLight(bool on) { (void)on; }
 
 void uiLvglBeginFullPaint(uint32_t holdMs) {
@@ -474,7 +477,7 @@ void uiLvglScheduleRecover(const char* reason, bool hard, uint32_t delayMs) {
 }
 
 void uiLvglSetRgbLowBandwidth(bool low) {
-  (void)low;
+  s_displayLite = low;
 }
 
 int uiLvglHorRes() { return s_horRes; }
@@ -508,14 +511,6 @@ void uiLvglTick() {
   displayHealthWatchdog();
   runScheduledRecover();
 
-  if (s_frozen) {
-    const uint32_t now = millis();
-    if (now != s_lastTickMs) {
-      lv_tick_inc(now - s_lastTickMs);
-      s_lastTickMs = now;
-    }
-    return;
-  }
   const uint32_t now = millis();
   if (now != s_lastTickMs) {
     lv_tick_inc(now - s_lastTickMs);
@@ -527,7 +522,7 @@ void uiLvglTick() {
 #if !LG_THERMA_SIMPLE_UI
   ui_tick();
   uiNetSyncWifi();
-  if (!netWifiIsBusy()) {
+  if (!netWifiIsBusy() && !s_displayLite) {
     uiEezApplySignalLeds();
     uiEezNtpLabelTick();
   }

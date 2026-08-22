@@ -9,6 +9,7 @@ void uiLvglTick();
 
 void uiLvglSetFrozen(bool frozen);
 bool uiLvglIsFrozen();
+bool uiLvglIsDisplayLite();
 
 void uiLvglSetSdioLight(bool on);
 void uiLvglBeginFullPaint(uint32_t holdMs);

@@ -7,20 +7,13 @@
 #ifndef UI_BUS_BINDINGS_H
 #define UI_BUS_BINDINGS_H
 
+#include "app_cmd.h"
 #include "ui_eez_model.h"
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/** Zdroj požadavku na SP — řídí brány podle režimu. */
-typedef enum {
-  UI_SP_SRC_HMI = 0,
-  UI_SP_SRC_MQTT,
-  UI_SP_SRC_REGULATOR,
-  UI_SP_SRC_PLAN,
-} UiSpSource;
 
 void uiBusHandleAkce(UiAkceTlacitko akce);
 
@@ -40,6 +33,9 @@ void uiBusQueueSetpointC(uint8_t teplotaC);
 void uiBusQueueAdjustSetpoint(int deltaC);
 
 void uiBusBindingsTick(void);
+
+/** Zpracování ctrl zpráv z appCmdDrainCtrl (LIN / SP / power). */
+void uiBusProcessAppMsg(const AppMsg* msg);
 
 /** Volání z časového plánu. */
 void uiBusPlanApplyStart(void);

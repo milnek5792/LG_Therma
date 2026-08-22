@@ -7,6 +7,7 @@
 #include <esp_private/brownout.h>
 
 #include "app_version.h"
+#include "app_cmd.h"
 #include "bus_lg_config.h"
 #include "bus_lg_lin_api.h"
 #include "bus_lg_model.h"
@@ -74,6 +75,7 @@ void setup() {
   }
 
   uiEezInit();
+  appCmdInit();
   uiNetInit();
   uiLvglInit();
 
@@ -125,8 +127,10 @@ void loop() {
                   (unsigned long)now,
                   (int)s_linStarted,
                   s_linStarted ? lgPocetPaketu() : 0UL);
-    ESP_LOGI(TAG, "HB freeze=%d flush=%u rx=%lu",
+    ESP_LOGI(TAG, "HB freeze=%d lite=%d q=%u flush=%u rx=%lu",
              (int)uiLvglIsFrozen(),
+             (int)uiLvglIsDisplayLite(),
+             (unsigned)appCmdQueueWaiting(),
              (unsigned)uiLvglFlushCount(),
              s_linStarted ? lgPocetRxBajtu() : 0UL);
   }

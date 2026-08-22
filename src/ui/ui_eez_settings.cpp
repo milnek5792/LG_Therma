@@ -6,6 +6,7 @@
 #include "ui_eez_actions.h"
 #include "ui_eez_fonts.h"
 #include "ui_eez_model.h"
+#include "ui_eez_vars.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -345,13 +346,7 @@ void uiSettingsTick() {
   snprintf(line, sizeof(line), "Stav: %s", uiEez.set_mqtt_status);
   setLabelIfChanged(settingsObj.lbl_mqtt_status, line);
   {
-    uint32_t col = kColText;
-    if (uiEez.sig_mqtt) {
-      col = kColGreen;
-    } else if (strstr(uiEez.set_mqtt_status, "Pripoj") != nullptr) {
-      col = kColOrange;
-    }
-    setTextColorCached(settingsObj.lbl_mqtt_status, col);
+    setTextColorCached(settingsObj.lbl_mqtt_status, get_var_sig_mqtt_color());
   }
 
   snprintf(line, sizeof(line), "Broker: %s", uiEez.set_mqtt_host);

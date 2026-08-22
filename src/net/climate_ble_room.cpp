@@ -488,13 +488,9 @@ void climateBleTick(void) {
       if (!netWifiIsConnected()) {
         return;
       }
-      if (netMqttIsBusy()) {
+      // Po bootu nejdřív BLE (MQTT je do té doby odložené v netMqttTick).
+      if (netMqttIsBusy() && !s_firstPollPending && !s_forcePoll) {
         return;
-      }
-      if (s_firstPollPending && !s_forcePoll) {
-        if (netMqttIsEnabled() && !netMqttIsConnected()) {
-          return;
-        }
       }
       const bool due = s_forcePoll || s_firstPollPending ||
                        (s_lastPollMs != 0 &&
@@ -616,6 +612,17 @@ bool climateBleIsOk(void) {
 bool climateBleIsBusy(void) {
 #if LG_THERMA_BLE_ROOM
   return s_phase != Phase::Idle;
+#else
+  return false;
+#endif
+}
+
+bool climateBleBootPollPending(void) {
+#if LG_THERMA_BLE_ROOM
+  if (!s_room.configured && !s_outdoor.configured) {
+    return false;
+  }
+  return s_firstPollPending;
 #else
   return false;
 #endif

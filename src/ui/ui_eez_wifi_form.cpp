@@ -5,6 +5,7 @@
 #include "storage_config_nvs.h"
 #include "ui_eez_fonts.h"
 #include "ui_eez_model.h"
+#include "app_cmd.h"
 #include "ui_eez_nav.h"
 
 #include <Arduino.h>
@@ -44,14 +45,13 @@ void styleField(lv_obj_t* obj) {
 
 void onBack(lv_event_t* e) {
   (void)e;
-  // Navigaci až v ui_tick — lv_screen_load uvnitř CLICKED často selže
-  uiEez.akce_tlacitko = UI_AKCE_WIFI_FORM_BACK;
+  appCmdEnqueueHmi(UI_AKCE_WIFI_FORM_BACK);
 }
 
 void onSave(lv_event_t* e) {
   (void)e;
   uiWifiFormSaveCredentials();
-  uiEez.akce_tlacitko = UI_AKCE_WIFI_FORM_SAVE;
+  appCmdEnqueueHmi(UI_AKCE_WIFI_FORM_SAVE);
 }
 
 void onConnect(lv_event_t* e) {
@@ -59,7 +59,7 @@ void onConnect(lv_event_t* e) {
   if (!uiWifiFormSaveCredentials()) {
     return;
   }
-  uiEez.akce_tlacitko = UI_AKCE_WIFI_FORM_CONNECT;
+  appCmdEnqueueHmi(UI_AKCE_WIFI_FORM_CONNECT);
 }
 
 void onFieldFocus(lv_event_t* e) {

@@ -782,9 +782,10 @@ bool reconnectOnce() {
     setStatus("Cekam WiFi...");
     return false;
   }
-  if (climateBleIsBusy()) {
+  if (climateBleIsBusy() || climateBleBootPollPending()) {
     setStatus("Cekam BLE...");
-    ESP_LOGI(TAG, "TLS odlozen — BLE busy");
+    ESP_LOGI(TAG, "TLS odlozen — BLE %s",
+             climateBleBootPollPending() ? "boot poll" : "busy");
     return false;
   }
 
@@ -989,7 +990,7 @@ void netMqttDisconnectQuiet(void) {
     s_tls.stop();
     s_connected = false;
     s_busy = false;
-    setStatus(s_enabled ? "Odpojeno" : "Vypnuto");
+    setStatus(s_enabled ? "Cekam BLE..." : "Vypnuto");
     ESP_LOGI(TAG, "disconnectQuiet (pre-BLE)");
   }
 }
@@ -999,6 +1000,12 @@ const char* netMqttHost() { return s_host; }
 
 void netMqttTick() {
   if (!s_enabled) {
+    return;
+  }
+
+  if (!s_connected &&
+      (climateBleBootPollPending() || climateBleIsBusy())) {
+    setStatus("Cekam BLE...");
     return;
   }
 

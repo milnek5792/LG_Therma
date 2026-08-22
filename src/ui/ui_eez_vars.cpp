@@ -1,6 +1,7 @@
 // ui_eez_vars.cpp — EEZ native variables -> uiEez model
 #include "ui_eez_vars.h"
 #include "ui_eez_model.h"
+#include "app_cmd.h"
 #include "climate_regulator.h"
 #include <math.h>
 #include <stdio.h>
@@ -15,9 +16,33 @@ static char* fmtSlot() {
   return slot;
 }
 
+static bool mqttSignalBleWait(void) {
+  return uiEez.set_mqtt_enabled &&
+         strstr(uiEez.set_mqtt_status, "Cekam BLE") != nullptr;
+}
+
+static bool mqttSignalConnecting(void) {
+  return uiEez.set_mqtt_enabled && uiEez.sig_wifi &&
+         strstr(uiEez.set_mqtt_status, "Pripoj") != nullptr;
+}
+
+static uint32_t mqttSignalColor(void) {
+  if (uiEez.sig_mqtt) {
+    return 0x30D158u;
+  }
+  if (mqttSignalBleWait()) {
+    return 0x0A84FFu;
+  }
+  if (mqttSignalConnecting()) {
+    return 0xFF9F0Au;
+  }
+  return 0x8E8E93u;
+}
+
 static bool tempOffline(float c) {
   return c <= UI_TEPLOTA_NEPLATNA + 100.0f;
 }
+
 
 static const char* fmtTemp(float c) {
   if (tempOffline(c)) {
@@ -130,8 +155,10 @@ void set_var_datum_text(const char* value) {
 bool get_var_cas_platny() { return uiEez.cas_platny; }
 void set_var_cas_platny(bool value) { uiEez.cas_platny = value; }
 
-int32_t get_var_akce_tlacitko() { return (int32_t)uiEez.akce_tlacitko; }
-void set_var_akce_tlacitko(int32_t value) { uiEez.akce_tlacitko = (UiAkceTlacitko)value; }
+int32_t get_var_akce_tlacitko() { return (int32_t)UI_AKCE_ZADNA; }
+void set_var_akce_tlacitko(int32_t value) {
+  appCmdEnqueueHmi((UiAkceTlacitko)value);
+}
 
 const char* get_var_plan_text() { return uiEez.plan_text; }
 void set_var_plan_text(const char* value) {
@@ -158,14 +185,21 @@ const char* get_var_sig_wifi____wi_fi__ok_____wi_fi______() {
 }
 
 const char* get_var_sig_mqtt____mqtt__pripojeno_____mqtt______() {
-  // Stejný stav jako obrazovka Nastaveni (set_mqtt_status)
   if (uiEez.sig_mqtt) {
     return "MQTT: OK";
   }
-  if (strstr(uiEez.set_mqtt_status, "Pripoj") != nullptr) {
+  if (mqttSignalBleWait() || mqttSignalConnecting()) {
     return "MQTT: ...";
   }
   return "MQTT: ---";
+}
+
+bool get_var_sig_mqtt_ble_wait(void) {
+  return mqttSignalBleWait();
+}
+
+uint32_t get_var_sig_mqtt_color(void) {
+  return mqttSignalColor();
 }
 
 uint32_t get_var_sig_chod___3199320___0x2c2c2e() {

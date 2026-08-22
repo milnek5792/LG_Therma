@@ -63,8 +63,8 @@ void netTask(void* /*arg*/) {
 
     netWifiTick();
     netNtpTick();
+    climateBleTick();  // boot scan před MQTT TLS
     netMqttTick();
-    climateBleTick();
 
     if (now - lastHbMs >= 3000) {
       lastHbMs = now;
