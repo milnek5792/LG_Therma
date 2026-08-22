@@ -2,7 +2,9 @@
 #include "ui_eez_vars.h"
 #include "ui_eez_model.h"
 #include "app_cmd.h"
+#include "climate_ble_room.h"
 #include "climate_regulator.h"
+#include "net_wifi_mgr.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -17,13 +19,38 @@ static char* fmtSlot() {
 }
 
 static bool mqttSignalBleWait(void) {
-  return uiEez.set_mqtt_enabled &&
-         strstr(uiEez.set_mqtt_status, "Cekam BLE") != nullptr;
+  if (!uiEez.set_mqtt_enabled) {
+    return false;
+  }
+  // Modrá jen při skutečné BLE pauze (scan / Wi‑Fi suspend), ne při boot poll před Wi‑Fi
+  return climateBleIsBusy() || netWifiIsSuspendedForBle();
 }
 
 static bool mqttSignalConnecting(void) {
   return uiEez.set_mqtt_enabled && uiEez.sig_wifi &&
          strstr(uiEez.set_mqtt_status, "Pripoj") != nullptr;
+}
+
+static bool wifiSignalConnecting(void) {
+  if (!uiEez.set_wifi_enabled) {
+    return false;
+  }
+  if (netWifiIsBusy() || netWifiIsSuspendedForBle()) {
+    return true;
+  }
+  const char* st = uiEez.set_wifi_status;
+  return strstr(st, "Pripoj") != nullptr || strstr(st, "Obnovuji") != nullptr ||
+         strstr(st, "BLE scan") != nullptr;
+}
+
+static uint32_t wifiSignalColor(void) {
+  if (uiEez.sig_wifi) {
+    return 0x30D158u;
+  }
+  if (wifiSignalConnecting()) {
+    return 0xFF9F0Au;
+  }
+  return 0x8E8E93u;
 }
 
 static uint32_t mqttSignalColor(void) {
@@ -81,6 +108,10 @@ const char* get_var_teplota_vody_set() {
   return fmtTemp(uiEez.teplota_vody_set);
 }
 void set_var_teplota_vody_set(float value) { uiEez.teplota_vody_set = value; }
+
+uint32_t get_var_teplota_vody_set_color(void) {
+  return uiEezTeplotaVodySetColor();
+}
 
 /** Skutečný SP vody z TČ (A0) — i v Auto. */
 const char* get_var_teplota_vody_set_lin() {
@@ -178,10 +209,14 @@ const char* get_var_sig_wifi____wi_fi__ok_____wi_fi______() {
   if (uiEez.sig_wifi) {
     return "Wi-Fi: OK";
   }
-  if (strstr(uiEez.set_wifi_status, "Pripoj") != nullptr) {
+  if (wifiSignalConnecting()) {
     return "Wi-Fi: ...";
   }
   return "Wi-Fi: ---";
+}
+
+uint32_t get_var_sig_wifi_color(void) {
+  return wifiSignalColor();
 }
 
 const char* get_var_sig_mqtt____mqtt__pripojeno_____mqtt______() {

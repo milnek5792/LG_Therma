@@ -785,13 +785,7 @@ void tick_screen_main() {
             lv_label_set_text(objects.lbl_wifi, new_val);
             tick_value_change_obj = NULL;
         }
-        // Zelená jen při připojení; oranžová při Pripojovani
-        uint32_t col = 0x8e8e93u;
-        if (get_var_sig_wifi()) {
-            col = 0x30d158u;
-        } else if (strstr(new_val, "...") != nullptr) {
-            col = 0xff9f0au;
-        }
+        uint32_t col = get_var_sig_wifi_color();
         static uint32_t s_wifiCol = 0;
         if (s_wifiCol != col) {
             s_wifiCol = col;
@@ -823,6 +817,18 @@ void tick_screen_main() {
             lv_label_set_text(objects.lbl_setpoint, new_val);
             tick_value_change_obj = NULL;
             alignTempUnit(objects.lbl_setpoint, objects.lbl_setpoint_unit);
+        }
+        uint32_t col = get_var_teplota_vody_set_color();
+        static uint32_t s_spCol = 0;
+        if (s_spCol != col) {
+            s_spCol = col;
+            lv_obj_set_style_text_color(
+                objects.lbl_setpoint, lv_color_hex(col), LV_PART_MAIN | LV_STATE_DEFAULT);
+            if (objects.lbl_setpoint_unit) {
+                lv_obj_set_style_text_color(
+                    objects.lbl_setpoint_unit, lv_color_hex(col),
+                    LV_PART_MAIN | LV_STATE_DEFAULT);
+            }
         }
     }
     {

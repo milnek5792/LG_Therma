@@ -11,7 +11,7 @@ unsigned long posledniBajtMs = 0;
 
 uint8_t mCilova = 0, mVstupni = 0, mVystupni = 0;
 bool stavZapnuto = false;
-bool pozadavekNaZapis = false;
+volatile bool pozadavekNaZapis = false;
 bool pozadavekZmenaStartu = false;
 uint8_t novaCilovaTeplota = 0;
 bool bliknuti = false;
@@ -57,11 +57,17 @@ void nastavStavovyText(const char* text) {
 
 void lgModelSnapA0(const uint8_t* data, uint8_t len) {
   lgModelLock();
-  if (len > sizeof(a0Snap)) { len = sizeof(a0Snap); }
+  lgModelSnapA0Locked(data, len);
+  lgModelUnlock();
+}
+
+void lgModelSnapA0Locked(const uint8_t* data, uint8_t len) {
+  if (len > sizeof(a0Snap)) {
+    len = sizeof(a0Snap);
+  }
   memcpy(a0Snap, data, len);
   a0SnapLen = len;
   s_casPosledniA0Ms = millis();
-  lgModelUnlock();
 }
 
 uint8_t lgModelA0Bajt(uint8_t idx, uint8_t vychozi) {

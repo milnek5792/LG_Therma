@@ -1,5 +1,6 @@
 #include "net_wifi_mgr.h"
 
+#include "climate_ble_room.h"
 #include "storage_config_nvs.h"
 #include "wifi_config.h"
 
@@ -36,7 +37,9 @@ constexpr unsigned long kArmSettleMs = 300;
 constexpr unsigned long kConnectGraceMs = 800;  // ignoruj stale WL_CONNECTED po begin
 constexpr unsigned long kRetryAfterFailMs = 15000;
 constexpr unsigned long kRetryAfterIdleMs = 5000;
+constexpr unsigned long kLinkLossDebounceMs = 8000;
 unsigned long s_lastRetryMs = 0;
+unsigned long s_linkUnhealthySinceMs = 0;
 
 void setStatus(const char* text) {
   strncpy(s_status, text ? text : "", sizeof(s_status));
@@ -120,6 +123,17 @@ void beginConnectNow() {
   WiFi.persistent(false);
   WiFi.setSleep(WIFI_PS_MIN_MODEM);  // méně RF contention než PS_NONE
   WiFi.mode(WIFI_STA);
+
+  // Link už drží — ne disconnect+begin (jinak bliká signálka bez důvodu)
+  if (WiFi.status() == WL_CONNECTED && hasValidIp()) {
+    const String currentSsid = WiFi.SSID();
+    if (currentSsid.length() > 0 && currentSsid.equals(s_credSsid)) {
+      refreshConnectedState();
+      Serial.printf("[NET] Wi-Fi already up %s / %s\n", s_ssid, s_ip);
+      return;
+    }
+  }
+
   if (WiFi.status() == WL_CONNECTED || WiFi.status() == WL_IDLE_STATUS) {
     WiFi.disconnect(false);
   }
@@ -131,6 +145,7 @@ void beginConnectNow() {
   s_connected = false;
   s_phase = WifiPhase::kConnecting;
   s_phaseStartedMs = millis();
+  s_linkUnhealthySinceMs = 0;
   setStatus("Pripojovani...");
 }
 
@@ -171,9 +186,7 @@ void netWifiInit() {
     s_phase = WifiPhase::kIdle;
     s_lastRetryMs = 0;
 
-    if (WiFi.status() == WL_CONNECTED && hasValidIp()) {
-      refreshConnectedState();
-    } else if (hasCreds) {
+    if (hasCreds) {
       armConnect();
     } else {
       setStatus("Nastavte sit v menu");
@@ -333,24 +346,46 @@ void netWifiTick() {
     return;
   }
 
-  // Idle / Connected / Failed
-  if (WiFi.status() == WL_CONNECTED && hasValidIp()) {
-    if (!s_connected || s_phase != WifiPhase::kConnected) {
-      refreshConnectedState();
-      Serial.printf("[NET] Wi-Fi OK: %s / %s\n", s_ssid, s_ip);
+  // kConnected — udržet link; krátké výpadky (modem sleep / BLE coexistence)
+  if (s_phase == WifiPhase::kConnected) {
+    if (WiFi.status() == WL_CONNECTED && hasValidIp()) {
+      s_linkUnhealthySinceMs = 0;
+      if (!s_connected) {
+        refreshConnectedState();
+      }
+      return;
     }
+
+    // BLE scan může krátce rozhodit RF — neodpojovat hned
+    if (climateBleIsBusy()) {
+      s_linkUnhealthySinceMs = 0;
+      return;
+    }
+
+    const uint32_t now = millis();
+    if (s_linkUnhealthySinceMs == 0) {
+      s_linkUnhealthySinceMs = now;
+      Serial.printf("[NET] Wi-Fi link hiccup — debounce %lu ms\n",
+                    (unsigned long)kLinkLossDebounceMs);
+      return;
+    }
+    if (now - s_linkUnhealthySinceMs < kLinkLossDebounceMs) {
+      return;
+    }
+    s_linkUnhealthySinceMs = 0;
+
+    s_connected = false;
+    s_phase = WifiPhase::kIdle;
+    setStatus("Odpojeno");
+    clearRuntimeNetworkInfo();
+    s_lastRetryMs = millis();
+    Serial.println("[NET] Wi-Fi ztraceno — retry brzy");
     return;
   }
 
-  if (s_connected || s_phase == WifiPhase::kConnected) {
+  if (s_connected) {
     s_connected = false;
-    if (s_phase == WifiPhase::kConnected) {
-      s_phase = WifiPhase::kIdle;
-      setStatus("Odpojeno");
-      clearRuntimeNetworkInfo();
-      s_lastRetryMs = millis();
-      Serial.println("[NET] Wi-Fi ztraceno — retry brzy");
-    }
+    clearRuntimeNetworkInfo();
   }
 
   // Auto-reconnect po fail / idle (jinak po rebootu / výpadku zůstane viset)
@@ -368,6 +403,13 @@ void netWifiTick() {
       return;
     }
     s_lastRetryMs = millis();
+
+    if (WiFi.status() == WL_CONNECTED && hasValidIp()) {
+      refreshConnectedState();
+      Serial.println("[NET] Wi-Fi soft-recover (link drzen)");
+      return;
+    }
+
     Serial.printf("[NET] Wi-Fi auto-retry (phase=%d)\n", (int)s_phase);
     armConnect();
   }

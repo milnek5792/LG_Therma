@@ -1,4 +1,4 @@
-// climate_ble_room.h — SwitchBot Meter(y) přes NimBLE (2 min, Wi‑Fi suspend)
+// climate_ble_room.h — SwitchBot Meter(y) přes NimBLE (scan 2 min, Wi‑Fi běží dál)
 #ifndef CLIMATE_BLE_ROOM_H
 #define CLIMATE_BLE_ROOM_H
 
@@ -16,6 +16,8 @@ void climateBleRequestNow(void);
 
 bool climateBleIsOk(void);
 bool climateBleIsBusy(void);
+/** Uvolni NimBLE stack před TLS (šetří ~30 KB interní DRAM). */
+void climateBleReleaseForTls(void);
 /** První scan po bootu ještě neproběhl — MQTT má počkat. */
 bool climateBleBootPollPending(void);
 float climateBleTempC(void);

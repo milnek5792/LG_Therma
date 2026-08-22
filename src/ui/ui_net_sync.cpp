@@ -46,7 +46,7 @@ void netTask(void* /*arg*/) {
 
     if (wifiBusy || bleBusy) {
       if (!uiLvglIsFrozen() && freezeUntilMs == 0) {
-        freezeUntilMs = now + (bleBusy ? 8000 : 3500);
+        freezeUntilMs = now + (bleBusy ? 12000 : 3500);
         uiLvglSetFrozen(true);
         ESP_LOGI(TAG, "LVGL freeze (%s)", bleBusy ? "BLE" : "Wi-Fi");
       } else if (uiLvglIsFrozen() && now >= freezeUntilMs && !mqttBusy &&

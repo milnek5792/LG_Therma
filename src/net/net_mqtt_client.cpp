@@ -772,6 +772,26 @@ bool subscribeAll() {
   return true;
 }
 
+constexpr size_t kTlsMinDmaBlock = 6144;
+constexpr size_t kTlsMinInternalBlock = 12288;
+
+bool heapOkForTls() {
+  const size_t dma =
+      heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+  const size_t internal = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+  return dma >= kTlsMinDmaBlock && internal >= kTlsMinInternalBlock;
+}
+
+void logHeapForTls(const char* tag) {
+  ESP_LOGI(TAG, "%s heap free=%u maxblk=%u dma_max=%u psram=%u",
+           tag,
+           (unsigned)ESP.getFreeHeap(),
+           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA |
+                                                      MALLOC_CAP_INTERNAL),
+           (unsigned)ESP.getFreePsram());
+}
+
 bool reconnectOnce() {
   fillHostDisplay();
   if (!timeOkForTls()) {
@@ -782,10 +802,9 @@ bool reconnectOnce() {
     setStatus("Cekam WiFi...");
     return false;
   }
-  if (climateBleIsBusy() || climateBleBootPollPending()) {
+  if (climateBleIsBusy()) {
     setStatus("Cekam BLE...");
-    ESP_LOGI(TAG, "TLS odlozen — BLE %s",
-             climateBleBootPollPending() ? "boot poll" : "busy");
+    ESP_LOGI(TAG, "TLS odlozen — BLE scan");
     return false;
   }
 
@@ -793,6 +812,17 @@ bool reconnectOnce() {
   ESP_LOGI(TAG, "freeze ON (TLS) ms=%lu", (unsigned long)millis());
   uiLvglSetFrozen(true);
   setStatus("Pripojovani...");
+
+  climateBleReleaseForTls();
+  delay(200);
+
+  if (!heapOkForTls()) {
+    logHeapForTls("TLS odlozen — malo DRAM");
+    setStatus("Cekam pamet...");
+    uiLvglSetFrozen(false);
+    s_busy = false;
+    return false;
+  }
 
   IPAddress ip;
   if (!resolveMqttIpv4(ip)) {
@@ -829,12 +859,7 @@ bool reconnectOnce() {
   s_mqtt.setSocketTimeout(20);
 
   ESP_LOGI(TAG, "connect %s as %s...", s_host, MQTT_CLIENT_ID);
-  ESP_LOGI(TAG,
-           "heap free=%u maxblk=%u dma_max=%u psram=%u",
-           (unsigned)ESP.getFreeHeap(),
-           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
-           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA),
-           (unsigned)ESP.getFreePsram());
+  logHeapForTls("pred TLS");
 
   const uint32_t t0 = millis();
   const bool ok = s_mqtt.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASSWORD);
@@ -1003,8 +1028,7 @@ void netMqttTick() {
     return;
   }
 
-  if (!s_connected &&
-      (climateBleBootPollPending() || climateBleIsBusy())) {
+  if (!s_connected && climateBleIsBusy()) {
     setStatus("Cekam BLE...");
     return;
   }

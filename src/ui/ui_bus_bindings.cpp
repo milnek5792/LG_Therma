@@ -58,17 +58,19 @@ uint8_t clampWaterC(int t) {
 }
 
 uint8_t aktualniCilovaTeplota() {
-  uint8_t t = pozadavekNaZapis ? novaCilovaTeplota : mCilova;
-  if (t < kWaterMinC || t > kWaterMaxC) {
-    t = mCilova;
+  if (pozadavekNaZapis) {
+    return clampWaterC(novaCilovaTeplota);
   }
-  if (t < kWaterMinC || t > kWaterMaxC) {
-    const int fromUi = (int)(uiEez.teplota_vody_set + 0.5f);
-    t = (fromUi >= (int)kWaterMinC && fromUi <= (int)kWaterMaxC)
-            ? (uint8_t)fromUi
-            : 35;
+  if (mCilova >= kWaterMinC && mCilova <= kWaterMaxC) {
+    return mCilova;
   }
-  return clampWaterC(t);
+  lgModelLock();
+  const uint8_t a0Sp = lgMaCerstoA0() ? lgModelA0Bajt(8) : 0;
+  lgModelUnlock();
+  if (a0Sp >= kWaterMinC && a0Sp <= kWaterMaxC) {
+    return a0Sp;
+  }
+  return clampWaterC(35);
 }
 
 bool drzenyZapnuty() {
@@ -86,7 +88,13 @@ void provedStop() {
   tcPozadavekZap = false;
   stavZapnuto = false;
   lgNastavDrzenyStav(t, false);
-  provedZapisTeploty(t, false, true);
+
+  lgModelLock();
+  novaCilovaTeplota = t;
+  pozadavekZmenaStartu = true;
+  pozadavekNaZapis = true;
+  lgModelUnlock();
+
   uiEez.sig_chod = false;
   uiEez.stav_tc = UI_STAV_VYP;
   ESP_LOGI(TAG, "STOP T=%u", (unsigned)t);
@@ -112,22 +120,19 @@ void provedStart() {
     ESP_LOGI(TAG, "START ignorovan — uz zapnuto");
     return;
   }
-  if (lgZapisBezi()) {
-    ESP_LOGI(TAG, "START ignorovan — zapis bezi");
-    return;
-  }
 
   lgModelLock();
   novaCilovaTeplota = t;
   mCilova = t;
   tcPozadavekZap = true;
   lgNastavDrzenyStav(t, true);
+  pozadavekZmenaStartu = true;
+  pozadavekNaZapis = true;
   lgModelUnlock();
 
   uiEez.sig_chod = true;
   uiEez.stav_tc = UI_STAV_PRESTART;
 
-  provedZapisTeploty(t, true, true);
   ESP_LOGI(TAG, "START T=%u (session ON)%s", (unsigned)t,
            uiEez.rezim == UI_REZIM_AUTO ? " Auto" : "");
 }
@@ -149,7 +154,7 @@ void provedTeplotaAbsolutni(uint8_t nova, UiSpSource src) {
     return;
   }
 
-  // Ruční HMI/MQTT: command-first inkrement, zápis až na dalším A0 (původní chování)
+  // Ruční HMI/MQTT: fronta do linTask (bez race na lgZapis)
   if (uiEez.rezim != UI_REZIM_AUTO &&
       (src == UI_SP_SRC_HMI || src == UI_SP_SRC_MQTT)) {
     if (!drzenyZapnuty() && !stavZapnuto) {
@@ -164,14 +169,16 @@ void provedTeplotaAbsolutni(uint8_t nova, UiSpSource src) {
     if (drzetStavAktivni) {
       cilovaTeplotaTab5 = nova;
     }
+    pozadavekZmenaStartu = false;
+    pozadavekNaZapis = true;
     lgModelUnlock();
 
-    uiEez.teplota_vody_set = (float)nova;
-    ESP_LOGI(TAG, "setpoint cmd -> %u C src=%s (ceka A0)", (unsigned)nova,
-             spSrcName(src));
+    uiEez.teplota_vody_set = static_cast<float>(nova);
+    uiEez.sp_pending = nova;
+    uiEez.sp_pending_ms = millis();
+    potrebaObnovitDisplej = true;
 
-    pozadavekNaZapis = true;
-    pozadavekZmenaStartu = false;
+    ESP_LOGI(TAG, "setpoint cmd -> %u C src=%s", (unsigned)nova, spSrcName(src));
     return;
   }
 
@@ -196,20 +203,17 @@ void provedTeplotaAbsolutni(uint8_t nova, UiSpSource src) {
   }
 
   if (soloRezimTab5) {
-    if (lgZapisBezi()) {
-      pozadavekNaZapis = true;
-      pozadavekZmenaStartu = false;
-      ESP_LOGI(TAG, "setpoint odlozen — zapis bezi");
-      return;
-    }
-    pozadavekNaZapis = false;
+    lgModelLock();
+    pozadavekNaZapis = true;
     pozadavekZmenaStartu = false;
-    provedZapisTeploty(nova, zap, false);
+    lgModelUnlock();
     return;
   }
 
+  lgModelLock();
   pozadavekNaZapis = true;
   pozadavekZmenaStartu = false;
+  lgModelUnlock();
 }
 
 void provedTeplotaZmena(int delta, UiSpSource src) {

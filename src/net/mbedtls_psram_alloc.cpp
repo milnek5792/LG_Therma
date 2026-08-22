@@ -14,8 +14,8 @@ void* __wrap_esp_mbedtls_mem_calloc(size_t n, size_t size) {
     return nullptr;
   }
   const size_t bytes = n * size;
-  // SSL in/out = 16 KB každý — to je to, co padá na fragmented internal heap
-  if (bytes >= 1024) {
+  // TLS buffery do PSRAM — interní DRAM nechat pro esp-sha / WiFi DMA
+  if (bytes >= 512) {
     void* p = heap_caps_calloc(n, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (p) {
       return p;

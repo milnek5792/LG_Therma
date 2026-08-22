@@ -2,6 +2,7 @@
 #include "ui_eez_model.h"
 
 #include "bus_lg_config.h"
+#include "bus_lg_lin_api.h"
 #include "bus_lg_model.h"
 #include "bus_lg_protocol.h"
 
@@ -17,6 +18,15 @@ float uiTeplotaC(uint8_t b, bool platna) {
     return UI_TEPLOTA_NEPLATNA;
   }
   return static_cast<float>(b);
+}
+
+unsigned long spPendingWarnMs(void) {
+  const unsigned long period = lgA0PeriodMs();
+  if (period > 0) {
+    const unsigned long adaptive = period + UI_SP_PENDING_MARGIN_MS;
+    return adaptive > UI_SP_PENDING_WARN_MS ? adaptive : UI_SP_PENDING_WARN_MS;
+  }
+  return UI_SP_PENDING_WARN_MS;
 }
 
 }  // namespace
@@ -81,24 +91,22 @@ void uiEezSyncFromBus() {
   // Venkovní T jen z BLE outdoor — LIN A0 B5 se nepoužívá
 
   if (uiEez.rezim != UI_REZIM_AUTO) {
-    // Ruční: pending = command na displeji, jinak potvrzené A0 B8
-    if (pozadavekNaZapis) {
-      if (novaCilovaTeplota >= 15 && novaCilovaTeplota <= 65) {
-        uiEez.teplota_vody_set = static_cast<float>(novaCilovaTeplota);
-      }
-    } else if (maA0) {
-      const uint8_t a0Sp = lgModelA0Bajt(8);
-      if (a0Sp >= 15 && a0Sp <= 65) {
+    const uint8_t a0Sp = maA0 ? lgModelA0Bajt(8) : 0;
+    const bool a0SpPlatny = maA0 && a0Sp >= 15 && a0Sp <= 65;
+
+    if (uiEez.sp_pending != 0) {
+      if (a0SpPlatny && a0Sp == uiEez.sp_pending) {
+        uiEez.sp_pending = 0;
         uiEez.teplota_vody_set = static_cast<float>(a0Sp);
-      } else if (cilova >= 15 && cilova <= 65) {
-        uiEez.teplota_vody_set = static_cast<float>(cilova);
+      } else {
+        uiEez.teplota_vody_set = static_cast<float>(uiEez.sp_pending);
       }
-    } else if (cilova < 15) {
+    } else if (a0SpPlatny) {
+      uiEez.teplota_vody_set = static_cast<float>(a0Sp);
+    } else if (cilova >= 15 && cilova <= 65) {
+      uiEez.teplota_vody_set = static_cast<float>(cilova);
+    } else {
       uiEez.teplota_vody_set = UI_TEPLOTA_NEPLATNA;
-    }
-  } else if (pozadavekNaZapis) {
-    if (novaCilovaTeplota >= 15 && novaCilovaTeplota <= 65) {
-      uiEez.teplota_vody_set = static_cast<float>(novaCilovaTeplota);
     }
   } else if (maA0) {
     const uint8_t a0Sp = lgModelA0Bajt(8);
@@ -149,4 +157,14 @@ void uiEezSyncFromBus() {
   }
 
   lgModelUnlock();
+}
+
+uint32_t uiEezTeplotaVodySetColor(void) {
+  if (uiEez.rezim == UI_REZIM_AUTO || uiEez.sp_pending == 0) {
+    return UI_SP_COLOR_OK;
+  }
+  if ((millis() - uiEez.sp_pending_ms) >= spPendingWarnMs()) {
+    return UI_SP_COLOR_WARN;
+  }
+  return UI_SP_COLOR_PENDING;
 }

@@ -328,12 +328,7 @@ void uiSettingsTick() {
   snprintf(line, sizeof(line), "Stav: %s", uiEez.set_wifi_status);
   setLabelIfChanged(settingsObj.lbl_wifi_status, line);
   {
-    uint32_t col = kColText;
-    if (uiEez.sig_wifi) {
-      col = kColGreen;
-    } else if (strstr(uiEez.set_wifi_status, "Pripoj") != nullptr) {
-      col = kColOrange;
-    }
+    uint32_t col = get_var_sig_wifi_color();
     setTextColorCached(settingsObj.lbl_wifi_status, col);
   }
 

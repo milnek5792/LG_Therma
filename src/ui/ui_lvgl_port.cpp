@@ -37,6 +37,7 @@ uint32_t s_lastTickMs = 0;
 uint32_t s_flushCount = 0;
 uint32_t s_rgbRestartCount = 0;
 volatile bool s_initDone = false;
+uint32_t s_healthGraceUntilMs = 0;
 volatile bool s_frozen = false;
 bool s_displayLite = false;
 bool s_pointerInput = true;
@@ -214,6 +215,10 @@ void displayHealthWatchdog(void) {
 
   const uint32_t now = millis();
 
+  if (now < s_healthGraceUntilMs) {
+    return;
+  }
+
   if (s_frozen && s_frozenSinceMs != 0 && (now - s_frozenSinceMs) > 4000) {
     ESP_LOGW("LVGL", "freeze watchdog — unfreeze after %lu ms",
              (unsigned long)(now - s_frozenSinceMs));
@@ -384,6 +389,7 @@ void uiLvglInit() {
   s_horRes = BOARD_PANEL_W;
   s_verRes = BOARD_PANEL_H;
   s_initDone = true;
+  s_healthGraceUntilMs = millis() + 10000;
 
   uiNetStartTask();  // Wi-Fi/NTP na druhém jádře — mimo LVGL flush
   ESP_LOGI("LVGL", "init done direct-FB + net task");

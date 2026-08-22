@@ -1,14 +1,22 @@
 // ui_eez_model.h — promenne pro EEZ Studio (graficky editor -> LVGL)
-//
-// V EEZ: Project -> Variables -> vytvor promenne se STEJNYMI jmeny (EEZ_VAR_*).
-// Typy doporucene nize u kazde promenne.
-//
 #ifndef UI_EEZ_MODEL_H
 #define UI_EEZ_MODEL_H
 
 #include <Arduino.h>
 
+#include "bus_lg_config.h"
+
 #define UI_TEPLOTA_NEPLATNA (-1000.0f)
+
+/** Po +/- bez potvrzení A0 B8 — fallback (ms), viz LG_A0_SLOW_PERIOD_MS. */
+#ifndef UI_SP_PENDING_WARN_MS
+#define UI_SP_PENDING_WARN_MS (LG_A0_SLOW_PERIOD_MS + UI_SP_PENDING_MARGIN_MS)
+#endif
+
+/** Barvy setpointu na HMI */
+#define UI_SP_COLOR_OK      0xFFFFFFu
+#define UI_SP_COLOR_PENDING 0xFF9F0Au
+#define UI_SP_COLOR_WARN    0xFF453Au
 
 // --- Rezim regulace (tlacitko Auto / Vystupni teplota) ---
 enum UiRezimRegulace : uint8_t {
@@ -89,6 +97,10 @@ struct UiEezModel {
   float teplota_venkovni;
   float teplota_spad;
 
+  /** Ruční +/-: cmd na displeji hned; 0 = potvrzeno A0 B8. */
+  uint8_t sp_pending;
+  uint32_t sp_pending_ms;
+
   UiRezimRegulace rezim;
   UiStavTc stav_tc;
 
@@ -130,5 +142,6 @@ void uiEezNastavCas(const char* cas, const char* datum, bool platny);
 void uiEezNastavSit(bool wifi, bool mqtt, bool ble);
 void uiEezNastavTeplotuVnitrni(float c);
 void uiEezNastavTeplotuVenkovni(float c);
+uint32_t uiEezTeplotaVodySetColor(void);
 
 #endif

@@ -1,4 +1,4 @@
-// climate_ble_room.cpp — SwitchBot x2: Wi‑Fi OFF → BLE scan → Wi‑Fi ON
+// climate_ble_room.cpp — SwitchBot x2: BLE scan paralelně s Wi‑Fi (coexistence)
 #include "climate_ble_room.h"
 
 #include "ble_config.h"
@@ -8,6 +8,7 @@
 #include "ui_ui_lvgl.h"
 
 #include <Arduino.h>
+#include <esp_coexist.h>
 #include <esp_log.h>
 #include <math.h>
 #include <stdio.h>
@@ -29,11 +30,9 @@ constexpr uint32_t kOfflineMs = 5 * 60 * 1000UL;
 
 enum class Phase : uint8_t {
   Idle = 0,
-  WifiOffSettle,
   BleInit,
   Scanning,
   Cleanup,
-  WifiResume,
 };
 
 struct MeterReading {
@@ -482,13 +481,13 @@ void climateBleTick(void) {
 
   switch (s_phase) {
     case Phase::Idle: {
-      if (netWifiIsBusy() || netWifiIsSuspendedForBle()) {
+      if (netWifiIsBusy()) {
         return;
       }
       if (!netWifiIsConnected()) {
         return;
       }
-      // Po bootu nejdřív BLE (MQTT je do té doby odložené v netMqttTick).
+      // Během TLS handshake nech scan počkat
       if (netMqttIsBusy() && !s_firstPollPending && !s_forcePoll) {
         return;
       }
@@ -504,33 +503,16 @@ void climateBleTick(void) {
       s_lastPollMs = now;
       s_room.hitThisScan = false;
       s_outdoor.hitThisScan = false;
-      ESP_LOGI(TAG, "poll BEGIN%s — MQTT down, WiFi OFF",
-               first ? " (first after MQTT)" : "");
-      uiLvglSetFrozen(true);
+      ESP_LOGI(TAG, "poll BEGIN%s (WiFi+MQTT bezi, interval=%lus)",
+               first ? " first" : "",
+               (unsigned long)(BLE_POLL_INTERVAL_MS / 1000));
       uiLvglSetRgbLowBandwidth(true);
-      netMqttDisconnectQuiet();
-      if (!netWifiSuspendForBle()) {
-        ESP_LOGW(TAG, "suspend fail");
-        uiLvglSetRgbLowBandwidth(false);
-        uiLvglSetFrozen(false);
-        if (first) {
-          s_firstPollPending = true;
-          s_lastPollMs = 0;
-        }
-        return;
-      }
-      enterPhase(Phase::WifiOffSettle);
+      enterPhase(Phase::BleInit);
       break;
     }
 
-    case Phase::WifiOffSettle:
-      if (now - s_phaseMs < 1500) {
-        break;
-      }
-      enterPhase(Phase::BleInit);
-      break;
-
     case Phase::BleInit: {
+      esp_coex_preference_set(ESP_COEX_PREFER_WIFI);
       ESP_LOGI(TAG, "NimBLE %s...",
                NimBLEDevice::isInitialized() ? "reuse" : "init");
       if (!NimBLEDevice::isInitialized()) {
@@ -540,8 +522,8 @@ void climateBleTick(void) {
       NimBLEScan* scan = NimBLEDevice::getScan();
       scan->setScanCallbacks(&s_scanCbs, false);
       scan->setActiveScan(true);
-      scan->setInterval(160);
-      scan->setWindow(120);
+      scan->setInterval(320);
+      scan->setWindow(80);
       scan->setDuplicateFilter(false);  // oba senzory
       ESP_LOGI(TAG, "scan start %d ms room=%s out=%s", BLE_SCAN_MS,
                BLE_METER_MAC, BLE_OUTDOOR_MAC);
@@ -569,28 +551,18 @@ void climateBleTick(void) {
     }
 
     case Phase::Cleanup:
-      bleStopScanOnly();
-      enterPhase(Phase::WifiResume);
-      break;
-
-    case Phase::WifiResume:
-      ESP_LOGI(TAG, "poll END room=%d out=%d — WiFi ON",
-               (int)s_room.hitThisScan, (int)s_outdoor.hitThisScan);
-      netWifiResumeAfterBle();
+      bleDeinitSafe();
       uiLvglSetRgbLowBandwidth(false);
-      uiLvglSetFrozen(false);
+      ESP_LOGI(TAG, "poll END room=%d out=%d",
+               (int)s_room.hitThisScan, (int)s_outdoor.hitThisScan);
       enterPhase(Phase::Idle);
       break;
   }
 
   if (s_phase != Phase::Idle && (now - s_lastPollMs) > BLE_POLL_WATCHDOG_MS) {
-    ESP_LOGE(TAG, "poll WATCHDOG — force resume phase=%d", (int)s_phase);
+    ESP_LOGE(TAG, "poll WATCHDOG — force stop phase=%d", (int)s_phase);
     bleDeinitSafe();
-    if (netWifiIsSuspendedForBle()) {
-      netWifiResumeAfterBle();
-    }
     uiLvglSetRgbLowBandwidth(false);
-    uiLvglSetFrozen(false);
     enterPhase(Phase::Idle);
   }
 
@@ -614,6 +586,17 @@ bool climateBleIsBusy(void) {
   return s_phase != Phase::Idle;
 #else
   return false;
+#endif
+}
+
+void climateBleReleaseForTls(void) {
+#if LG_THERMA_BLE_ROOM
+  if (s_phase != Phase::Idle) {
+    return;
+  }
+  if (s_nimbleUp) {
+    bleDeinitSafe();
+  }
 #endif
 }
 

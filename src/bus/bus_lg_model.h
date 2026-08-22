@@ -12,7 +12,7 @@ extern unsigned long posledniBajtMs;
 
 extern uint8_t mCilova, mVstupni, mVystupni;
 extern bool stavZapnuto;
-extern bool pozadavekNaZapis;
+extern volatile bool pozadavekNaZapis;
 extern bool pozadavekZmenaStartu;
 extern uint8_t novaCilovaTeplota;
 extern bool bliknuti;
@@ -38,6 +38,8 @@ void lgModelUnlock();
 void nastavStavovyText(const char* text);
 
 void lgModelSnapA0(const uint8_t* data, uint8_t len);
+/** Volat jen když už držíte lgModelLock(). */
+void lgModelSnapA0Locked(const uint8_t* data, uint8_t len);
 uint8_t lgModelA0Bajt(uint8_t idx, uint8_t vychozi = 0);
 /** true = A0 přišel nedávno (LIN online). Default viz LG_A0_FRESH_MS. */
 bool lgMaCerstoA0(uint32_t maxAgeMs = 0);

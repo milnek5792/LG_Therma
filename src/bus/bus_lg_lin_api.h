@@ -7,10 +7,13 @@
 void lgBusInit();
 void lgBusTick();
 
+unsigned long lgA0PeriodMs();
 unsigned long lgPocetPaketu();
 unsigned long lgPocetRxBajtu();
 bool lgBusIsReady();
 bool lgZapisBezi();
+/** true = smíme posílat C0 (SOLO nebo PARALLEL s držením session). */
+bool lgBusSmiPosilatTx(void);
 
 void nastavMonitorPozastaven(bool pauza);
 void prepniMonitorPozastaven();

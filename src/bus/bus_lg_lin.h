@@ -314,6 +314,7 @@ const char* lgPopisC0Subcmd(uint8_t sub) {
   switch (sub) {
     case 0x30: return "STOP (orig. ovladac)";
     case 0x32: return "stav / teplota / START";
+    case 0x33: return "zmena cilove teploty (+/-)";
     case 0x3C: return "nepouzivat";
     default:   return "neznama subcmd";
   }
@@ -341,6 +342,8 @@ void lgVypisStavB2B3(uint8_t b2, uint8_t b3, uint8_t sub = 0xFF) {
     Serial.println("  -> START krok 1 (priprava B2=0x02 B3=0x00 — spousti PRESTART)");
   } else if (sub == 0x32 && b2 == 0x02 && b3 == 0x02) {
     Serial.println("  -> START krok 2 / potvrzeni prikazu (B3=0x02)");
+  } else if (sub == 0x33) {
+    Serial.printf("  -> zmena cilove teploty (A0 B1=0x33, B2/B3=%02X/%02X)\n", b2, b3);
   } else if (lgJeStabilniBeh(b3)) {
     Serial.println("  -> stabilni beh (B3 ma bity 0x02+0x08 = 0x0A v A0)");
   } else if (lgJeZapnuto(b3) && !(b3 & LG_BIT_BEZI)) {
@@ -494,18 +497,16 @@ void lgSestavC0ZVzoru(uint8_t *out, uint8_t teplota, uint8_t subcmd, uint8_t b2,
 }
 
 void lgOdesliC0Paket(uint8_t *paket) {
-  Serial.print("[NAS ZAPIS TX] ");
-  for (uint8_t i = 0; i < LG_PAKET_LEN; i++) { Serial.printf("%02X ", paket[i]); }
-  Serial.printf("  (sub=0x%02X B2=%02X B3=%02X)\n", paket[1], paket[2], paket[3]);
+  ESP_LOGI("LIN", "TX C0 sub=0x%02X B2=%02X B3=%02X B8=%u",
+           paket[1], paket[2], paket[3], (unsigned)paket[8]);
 
 #if LG_ODPOSLECH_BEZ_ZAPISU
   if (!lgSmiPosilatTx()) {
-    Serial.println("  (TX simulace — zapnete PARALLEL nebo SOLO)");
+    ESP_LOGI("LIN", "TX simulace — zapnete PARALLEL nebo SOLO");
     return;
   }
   LG_Serial.write(paket, LG_PAKET_LEN);
   LG_Serial.flush();
-  Serial.println("  (TX odeslano na sbernici)");
 #else
   LG_Serial.write(paket, LG_PAKET_LEN);
   LG_Serial.flush();
@@ -554,7 +555,6 @@ void lgZapisSpust(uint8_t teplota, bool zapnuto, bool zmenaStartu) {
   lgZapis.pocetKroku = 0;
   lgZapis.cekaA0Start = false;
   lgZapis.opakovani = 2;
-  lgZapis.casDalsiho = millis() + 120;
 
   if (zmenaStartu && zapnuto) {
     lgZapis.jeStartSekvence = true;
@@ -575,12 +575,24 @@ void lgZapisSpust(uint8_t teplota, bool zapnuto, bool zmenaStartu) {
     lgZapisPridatKrok(nullptr, teplota, 0x30, 0x00, 0x00);
   } else {
     lgZapis.jeStartSekvence = false;
-    // Teplota: C0 32/02/02 vypada jako START potvrzeni — neni, necekat PRESTART
-    uint8_t b2 = zapnuto ? 0x02 : 0x00;
-    uint8_t b3 = zapnuto ? 0x02 : 0x00;
-    Serial.printf("[ZAPIS] Teplota=%u C (C0 32 B2=%02X B3=%02X) x2\n", teplota, b2, b3);
-    lgZapisPridatKrok(nullptr, teplota, 0x32, b2, b3);
-    lgZapis.opakovani = 2;
+    // Orig. +/- posila C0 33 + B8; A0 pak ma B1=0x33. NE C0 32/02/02 (= START potvrzeni).
+    uint8_t b2 = lgPosledniA0B2;
+    uint8_t b3 = lgPosledniA0B3;
+    if (!zapnuto && !lgJeCerpadloZap(b2)) {
+      b2 = 0x00;
+      b3 = 0x00;
+    } else if (lgJeCerpadloZap(b2) && !lgJeZapnuto(b3) && !lgJePrestartB3(b3)) {
+      b2 = 0x02;
+      b3 = 0x00;
+    }
+    Serial.printf("[ZAPIS] Teplota=%u C (C0 33 B2=%02X B3=%02X) x1\n", teplota, b2, b3);
+    lgZapisPridatKrok(nullptr, teplota, 0x33, b2, b3);
+    lgZapis.opakovani = 1;
+    lgZapis.casDalsiho = millis();
+  }
+
+  if (zmenaStartu) {
+    lgZapis.casDalsiho = millis() + 120;
   }
 
   lgZapis.aktivni = (lgZapis.pocetKroku > 0);
@@ -706,8 +718,9 @@ void lgZkontrolujObnovuStavu(uint8_t *data, uint8_t delka) {
 void lgZapisObsluha() {
   if (!lgZapis.aktivni) { return; }
   if (millis() < lgZapis.casDalsiho) { return; }
-  if (indexLg > 0 || (millis() - posledniBajtMs) < 60) {
-    lgZapis.casDalsiho = millis() + 40;
+  const unsigned long quietMs = lgZapis.jeStartSekvence ? 60UL : 0UL;
+  if (indexLg > 0 || (quietMs > 0 && (millis() - posledniBajtMs) < quietMs)) {
+    lgZapis.casDalsiho = millis() + 5;
     return;
   }
 

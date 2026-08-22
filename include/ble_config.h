@@ -30,7 +30,7 @@
 #define BLE_SCAN_MS 10000
 #endif
 
-// Celý poll (WiFi off + scan + resume) max
+// Celý poll (scan + cleanup) max
 #ifndef BLE_POLL_WATCHDOG_MS
 #define BLE_POLL_WATCHDOG_MS 35000
 #endif

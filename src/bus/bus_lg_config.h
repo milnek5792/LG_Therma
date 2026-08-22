@@ -39,4 +39,14 @@
 #define LG_A0_FRESH_MS 60000u
 #endif
 
+/** Typická perioda A0 v klidu (TČ VYP) — z monitoru ~10–25 s. */
+#ifndef LG_A0_SLOW_PERIOD_MS
+#define LG_A0_SLOW_PERIOD_MS 25000u
+#endif
+
+/** Oranžová → červená až po jednom LIN cyklu + rezerva (ms). */
+#ifndef UI_SP_PENDING_MARGIN_MS
+#define UI_SP_PENDING_MARGIN_MS 5000u
+#endif
+
 #endif
