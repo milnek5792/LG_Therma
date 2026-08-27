@@ -11,9 +11,9 @@
 #define BLE_METER_MAC "EC:6F:03:86:1E:6B"
 #endif
 
-// Venkovní SwitchBot (stejný protokol) — doplň reálnou MAC
+// Venkovní SwitchBot Meter
 #ifndef BLE_OUTDOOR_MAC
-#define BLE_OUTDOOR_MAC "00:00:00:00:00:00"
+#define BLE_OUTDOOR_MAC "E8:76:C3:46:66:14"
 #endif
 
 // 0 = jen nakonfigurované MAC (produkce); 1 = první SwitchBot s T (diag)
@@ -23,6 +23,16 @@
 
 #ifndef BLE_POLL_INTERVAL_MS
 #define BLE_POLL_INTERVAL_MS 120000
+#endif
+
+/** Opakování po neúspěšném scanu / MISS (ms). */
+#ifndef BLE_FAIL_RETRY_MS
+#define BLE_FAIL_RETRY_MS 20000u
+#endif
+
+/** Max. rychlých retry po MISS, pak zase plný interval. */
+#ifndef BLE_MISS_RETRY_MAX
+#define BLE_MISS_RETRY_MAX 3
 #endif
 
 // Meter vysílá 1–4 s — 10 s scan stačí (oba senzory v jednom cyklu)

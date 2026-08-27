@@ -7,6 +7,19 @@
 void uiLvglInit();
 void uiLvglTick();
 
+/**
+ * Display owner = jen uiLvglTick (loop / core 1).
+ * Ostatní jádra/tasky smí jen Request* — aplikace v ticku.
+ */
+
+/** Lite režim (BLE scan) — refcount, thread-safe. */
+void uiLvglRequestLite(bool on);
+/** Freeze LVGL (TLS / Wi‑Fi spike) — refcount, thread-safe. */
+void uiLvglRequestFreeze(bool on);
+/** Jednorázová obnova RGB (soft/hard) — thread-safe. */
+void uiLvglRequestRecover(bool hard);
+
+/** Absolutní stav (UI thread). Preferovat Request* z net/MQTT/BLE. */
 void uiLvglSetFrozen(bool frozen);
 bool uiLvglIsFrozen();
 bool uiLvglIsDisplayLite();
@@ -27,7 +40,10 @@ void uiLvglRgbRecover(const char* reason);
 void uiLvglRecoverDisplay(const char* reason);
 /** Odložená obnova — neblokuje event handler (preferovat před RecoverDisplay). */
 void uiLvglScheduleRecover(const char* reason, bool hard, uint32_t delayMs);
-/** No-op: PCLK je pevný (runtime změna bliká celou plochu). */
+/**
+ * Přímý lite (jen UI thread). Z net/BLE použij uiLvglRequestLite.
+ * Při lite→off spustí RGB recover.
+ */
 void uiLvglSetRgbLowBandwidth(bool low);
 int uiLvglHorRes();
 int uiLvglVerRes();

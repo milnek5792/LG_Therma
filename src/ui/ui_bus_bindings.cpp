@@ -7,6 +7,7 @@
 #include "bus_lg_protocol.h"
 #include "climate_plan.h"
 #include "climate_regulator.h"
+#include "storage_config_nvs.h"
 #include "ui_eez_model.h"
 
 #include <Arduino.h>
@@ -97,7 +98,7 @@ void provedStop() {
 
   uiEez.sig_chod = false;
   uiEez.stav_tc = UI_STAV_VYP;
-  ESP_LOGI(TAG, "STOP T=%u", (unsigned)t);
+  ESP_LOGI(TAG, "STOP T=%u (session OFF)", (unsigned)t);
 }
 
 void provedStart() {
@@ -106,6 +107,7 @@ void provedStart() {
   const uint8_t b3 = lgModelA0Bajt(3);
   const bool uzDrzeny = drzenyZapnuty();
   const bool tcBezi = lgJeTcProvoz(b2, b3);
+  const bool busZiva = lgJeTcSessionZiva(b2, b3);
   uint8_t t = aktualniCilovaTeplota();
   lgModelUnlock();
 
@@ -116,8 +118,22 @@ void provedStart() {
     t = snap.t_water_c;
   }
 
-  if (uzDrzeny || tcBezi) {
+  if (uzDrzeny && cilovyZapnutoTab5) {
     ESP_LOGI(TAG, "START ignorovan — uz zapnuto");
+    return;
+  }
+
+  // Po restartu / cizí start: TČ už běží → jen převezmi session, neposílej C0 START
+  if (tcBezi || (busZiva && lgMaCerstoA0())) {
+    lgModelLock();
+    novaCilovaTeplota = t;
+    mCilova = t;
+    tcPozadavekZap = true;
+    lgNastavDrzenyStav(t, true);
+    lgModelUnlock();
+    uiEez.sig_chod = true;
+    uiEez.stav_tc = UI_STAV_BEH;
+    ESP_LOGI(TAG, "START adopt (TČ uz bezi) T=%u", (unsigned)t);
     return;
   }
 
@@ -132,6 +148,10 @@ void provedStart() {
 
   uiEez.sig_chod = true;
   uiEez.stav_tc = UI_STAV_PRESTART;
+
+  if (uiEez.rezim == UI_REZIM_AUTO) {
+    climateRegulatorRequestImmediateTick();
+  }
 
   ESP_LOGI(TAG, "START T=%u (session ON)%s", (unsigned)t,
            uiEez.rezim == UI_REZIM_AUTO ? " Auto" : "");
@@ -154,66 +174,28 @@ void provedTeplotaAbsolutni(uint8_t nova, UiSpSource src) {
     return;
   }
 
-  // Ruční HMI/MQTT: fronta do linTask (bez race na lgZapis)
-  if (uiEez.rezim != UI_REZIM_AUTO &&
-      (src == UI_SP_SRC_HMI || src == UI_SP_SRC_MQTT)) {
-    if (!drzenyZapnuty() && !stavZapnuto) {
-      ESP_LOGW(TAG, "SP vody %u ignorovan — nejdriv START (src=%s)", (unsigned)nova,
-               spSrcName(src));
-      return;
-    }
-
-    lgModelLock();
-    novaCilovaTeplota = nova;
-    mCilova = nova;
-    if (drzetStavAktivni) {
-      cilovaTeplotaTab5 = nova;
-    }
-    pozadavekZmenaStartu = false;
-    pozadavekNaZapis = true;
-    lgModelUnlock();
-
-    uiEez.teplota_vody_set = static_cast<float>(nova);
-    uiEez.sp_pending = nova;
-    uiEez.sp_pending_ms = millis();
-    potrebaObnovitDisplej = true;
-
-    ESP_LOGI(TAG, "setpoint cmd -> %u C src=%s", (unsigned)nova, spSrcName(src));
+  if (!drzenyZapnuty() && !stavZapnuto) {
+    ESP_LOGW(TAG, "SP vody %u ignorovan — nejdriv START (src=%s)", (unsigned)nova,
+             spSrcName(src));
     return;
   }
-
-  const bool zap = drzenyZapnuty() || stavZapnuto ||
-                   lgJeTcProvoz(lgModelA0Bajt(2), lgModelA0Bajt(3));
 
   lgModelLock();
   novaCilovaTeplota = nova;
   mCilova = nova;
-  if (drzetStavAktivni || zap) {
-    lgNastavDrzenyStav(nova, zap || cilovyZapnutoTab5);
+  if (drzetStavAktivni) {
+    cilovaTeplotaTab5 = nova;
   }
-  lgModelUnlock();
-
-  ESP_LOGI(TAG, "setpoint cmd -> %u C src=%s zap=%d auto=%d", (unsigned)nova,
-           spSrcName(src), (int)zap, (int)(uiEez.rezim == UI_REZIM_AUTO));
-
-  // Auto + T/C neběží: jen cmd pro další START (bez LIN VYP paketu)
-  if (uiEez.rezim == UI_REZIM_AUTO && !zap) {
-    ESP_LOGI(TAG, "Auto SP %u C — bez LIN (T/C nebezi)", (unsigned)nova);
-    return;
-  }
-
-  if (soloRezimTab5) {
-    lgModelLock();
-    pozadavekNaZapis = true;
-    pozadavekZmenaStartu = false;
-    lgModelUnlock();
-    return;
-  }
-
-  lgModelLock();
-  pozadavekNaZapis = true;
   pozadavekZmenaStartu = false;
+  pozadavekNaZapis = true;
   lgModelUnlock();
+
+  uiEez.teplota_vody_set = static_cast<float>(nova);
+  uiEez.sp_pending = nova;
+  uiEez.sp_pending_ms = millis();
+  potrebaObnovitDisplej = true;
+
+  ESP_LOGI(TAG, "setpoint cmd -> %u C src=%s", (unsigned)nova, spSrcName(src));
 }
 
 void provedTeplotaZmena(int delta, UiSpSource src) {
@@ -325,10 +307,15 @@ void uiBusHandleAkce(UiAkceTlacitko akce) {
         lgModelUnlock();
       } else {
         uiEez.rezim = UI_REZIM_AUTO;
-        RegulatorSnapshot snap{};
-        climateRegulatorGetSnapshot(&snap);
-        provedTeplotaAbsolutni(snap.t_water_c, UI_SP_SRC_REGULATOR);
+        if (drzenyZapnuty() || stavZapnuto) {
+          RegulatorSnapshot snap{};
+          climateRegulatorGetSnapshot(&snap);
+          provedTeplotaAbsolutni(snap.t_water_c, UI_SP_SRC_REGULATOR);
+        } else {
+          ESP_LOGI(TAG, "Auto zapamatovan — ceka START (cerpadlo vyp)");
+        }
       }
+      uiBusPersistRezim();
       ESP_LOGI(TAG, "rezim -> %s",
                uiEez.rezim == UI_REZIM_AUTO ? "AUTO" : "VYSTUPNI");
       break;
@@ -378,11 +365,31 @@ void uiBusPlanApplySetpoint(uint8_t teplotaC) {
   provedTeplotaAbsolutni(teplotaC, UI_SP_SRC_PLAN);
 }
 
+bool uiBusSetRegulationAuto(bool enable) {
+  uiEez.rezim = enable ? UI_REZIM_AUTO : UI_REZIM_VYSTUPNI_TEPLOTA;
+  uiBusPersistRezim();
+  return true;
+}
+
+void uiBusPersistRezim(void) {
+  storageSaveUiRezim((uint8_t)uiEez.rezim);
+}
+
 void uiBusBindingsTick(void) {
   appCmdDrainCtrl();
   climatePlanTick();
   climateRegulatorTick();
   uiEezSyncFromBus();
+}
+
+void uiBusFlushDeferredStorage(void) {
+  static uint32_t s_lastFlushMs = 0;
+  const uint32_t now = millis();
+  if (s_lastFlushMs != 0 && (now - s_lastFlushMs) < 400) {
+    return;
+  }
+  s_lastFlushMs = now;
+  storageFlushTcSessionPending();
 }
 
 void uiBusProcessAppMsg(const AppMsg* msg) {

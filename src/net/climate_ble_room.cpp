@@ -26,6 +26,7 @@ static const char* TAG = "BLE";
 
 constexpr uint16_t kSbServiceUuid = 0xFD3D;
 constexpr uint16_t kSbCompanyId = 0x0969;
+/** Po této době bez nového hit: sig_ble/PID = stale, ale poslední T se nemaže. */
 constexpr uint32_t kOfflineMs = 5 * 60 * 1000UL;
 
 enum class Phase : uint8_t {
@@ -61,9 +62,11 @@ MeterState s_outdoor;
 uint32_t s_lastPollMs = 0;
 uint32_t s_phaseMs = 0;
 Phase s_phase = Phase::Idle;
+bool s_liteHeld = false;
 bool s_nimbleUp = false;
 bool s_forcePoll = false;
 bool s_firstPollPending = true;
+uint8_t s_missRetries = 0;
 
 bool parseMac(const char* s, uint8_t out[6]) {
   unsigned v[6];
@@ -160,12 +163,16 @@ bool parseMfr0969(const uint8_t* p, size_t n, int rssi, MeterReading* out) {
 }
 
 void logHex(const char* tag, const uint8_t* p, size_t n) {
+  // Jen DEBUG — INFO flood přes CDC hladoví LVGL během scanu
+  if (esp_log_level_get(TAG) < ESP_LOG_DEBUG) {
+    return;
+  }
   char hex[64];
   size_t pos = 0;
   for (size_t i = 0; i < n && pos + 3 < sizeof(hex); ++i) {
     pos += (size_t)snprintf(hex + pos, sizeof(hex) - pos, "%02X", p[i]);
   }
-  ESP_LOGI(TAG, "%s len=%u %s", tag, (unsigned)n, hex);
+  ESP_LOGD(TAG, "%s len=%u %s", tag, (unsigned)n, hex);
 }
 
 bool parseAdv(const uint8_t* adv, size_t len, int rssi, MeterReading* out) {
@@ -298,34 +305,34 @@ class ScanCbs : public NimBLEScanCallbacks {
     const bool parsed =
         parseAdv(payload.data(), payload.size(), d->getRSSI(), &reading);
 
-    char macStr[20];
-    formatMac(ba->val, macStr, sizeof(macStr));
     const bool matchRoom =
         s_room.configured && macMatch(ba->val, s_room.mac);
     const bool matchOut =
         s_outdoor.configured && macMatch(ba->val, s_outdoor.mac);
 
-    ESP_LOGI(TAG, "SB cand %s rssi=%d parsed=%d room=%d out=%d T=%.1f", macStr,
-             d->getRSSI(), (int)parsed, (int)matchRoom, (int)matchOut,
-             parsed ? (double)reading.temp : -999.0);
-
 #if BLE_ACCEPT_ANY_SWITCHBOT
+    char macStr[20];
+    formatMac(ba->val, macStr, sizeof(macStr));
     if (parsed) {
       if (!s_room.hitThisScan) {
         applyReading(&s_room, reading);
+        ESP_LOGI(TAG, "hit ROOM (any) %s T=%.1f", macStr, (double)reading.temp);
       } else if (s_outdoor.configured && !s_outdoor.hitThisScan) {
         applyReading(&s_outdoor, reading);
+        ESP_LOGI(TAG, "hit OUTDOOR (any) %s T=%.1f", macStr,
+                 (double)reading.temp);
       }
       maybeStopScanEarly();
     }
 #else
     if (parsed && matchRoom) {
       applyReading(&s_room, reading);
-      ESP_LOGI(TAG, "hit ROOM T=%.1f", (double)reading.temp);
+      ESP_LOGI(TAG, "hit ROOM T=%.1f rssi=%d", (double)reading.temp, d->getRSSI());
       maybeStopScanEarly();
     } else if (parsed && matchOut) {
       applyReading(&s_outdoor, reading);
-      ESP_LOGI(TAG, "hit OUTDOOR T=%.1f", (double)reading.temp);
+      ESP_LOGI(TAG, "hit OUTDOOR T=%.1f rssi=%d", (double)reading.temp,
+               d->getRSSI());
       maybeStopScanEarly();
     }
 #endif
@@ -341,12 +348,11 @@ class ScanCbs : public NimBLEScanCallbacks {
 ScanCbs s_scanCbs;
 
 void expireIfStale(MeterState* st) {
-  if (!st || !st->ok) {
+  if (!st || isnan(st->temp)) {
     return;
   }
   if (!st->lastOkMs || (millis() - st->lastOkMs) > kOfflineMs) {
     st->ok = false;
-    st->temp = NAN;
   }
 }
 
@@ -354,20 +360,33 @@ void applyToUi() {
   expireIfStale(&s_room);
   expireIfStale(&s_outdoor);
 
-  if (s_room.ok && !isnan(s_room.temp)) {
+  if (!isnan(s_room.temp)) {
     uiEez.teplota_vnitrni = s_room.temp;
   } else {
     uiEez.teplota_vnitrni = UI_TEPLOTA_NEPLATNA;
   }
 
-  if (s_outdoor.ok && !isnan(s_outdoor.temp)) {
+  if (!isnan(s_outdoor.temp)) {
     uiEez.teplota_venkovni = s_outdoor.temp;
   } else {
     uiEez.teplota_venkovni = UI_TEPLOTA_NEPLATNA;
   }
 
-  // sig_ble = pokojový senzor OK (hlavní)
   uiEez.sig_ble = s_room.ok;
+}
+
+void scheduleMissRetry(const char* why) {
+  const uint32_t now = millis();
+  if (s_missRetries >= BLE_MISS_RETRY_MAX) {
+    ESP_LOGW(TAG, "%s — dalsi scan az za %lus", why,
+             (unsigned long)(BLE_POLL_INTERVAL_MS / 1000));
+    return;
+  }
+  s_missRetries++;
+  s_lastPollMs = now - (BLE_POLL_INTERVAL_MS - BLE_FAIL_RETRY_MS);
+  ESP_LOGW(TAG, "%s — retry %u/%u za %lus (drzim posledni T)", why,
+           (unsigned)s_missRetries, (unsigned)BLE_MISS_RETRY_MAX,
+           (unsigned long)(BLE_FAIL_RETRY_MS / 1000));
 }
 
 void enterPhase(Phase p) {
@@ -377,11 +396,27 @@ void enterPhase(Phase p) {
 
 void finishPoll() {
   applyToUi();
-  if (!s_room.hitThisScan) {
-    ESP_LOGW(TAG, "poll MISS room");
+  const bool roomMiss = s_room.configured && !s_room.hitThisScan;
+  const bool outMiss = s_outdoor.configured && !s_outdoor.hitThisScan;
+  if (roomMiss) {
+    ESP_LOGW(TAG, "poll MISS room (posledni T=%.1f)",
+             isnan(s_room.temp) ? -999.0 : (double)s_room.temp);
   }
-  if (s_outdoor.configured && !s_outdoor.hitThisScan) {
-    ESP_LOGW(TAG, "poll MISS outdoor");
+  if (outMiss) {
+    ESP_LOGW(TAG, "poll MISS outdoor (posledni T=%.1f)",
+             isnan(s_outdoor.temp) ? -999.0 : (double)s_outdoor.temp);
+  }
+  if (roomMiss || outMiss) {
+    scheduleMissRetry(roomMiss ? "MISS room" : "MISS outdoor");
+  } else {
+    s_missRetries = 0;
+  }
+  if (s_firstPollPending) {
+    if (s_room.hitThisScan || !s_room.configured) {
+      s_firstPollPending = false;
+    } else if (s_missRetries == 0) {
+      scheduleMissRetry("first poll neuspel");
+    }
   }
   enterPhase(Phase::Cleanup);
 }
@@ -424,6 +459,7 @@ void climateBleInit(void) {
   s_phase = Phase::Idle;
   s_forcePoll = false;
   s_firstPollPending = true;
+  s_missRetries = 0;
   uiEez.teplota_vnitrni = UI_TEPLOTA_NEPLATNA;
   uiEez.teplota_venkovni = UI_TEPLOTA_NEPLATNA;
   uiEez.sig_ble = false;
@@ -453,14 +489,14 @@ void climateBleStatusText(char* buf, size_t buflen) {
   }
   char roomPart[40];
   char outPart[40];
-  if (s_room.ok && !isnan(s_room.temp)) {
+  if (!isnan(s_room.temp)) {
     snprintf(roomPart, sizeof(roomPart), "in %.1fC", (double)s_room.temp);
   } else {
     snprintf(roomPart, sizeof(roomPart), "in ---");
   }
   if (!s_outdoor.configured) {
     snprintf(outPart, sizeof(outPart), "out n/a");
-  } else if (s_outdoor.ok && !isnan(s_outdoor.temp)) {
+  } else if (!isnan(s_outdoor.temp)) {
     snprintf(outPart, sizeof(outPart), "out %.1fC", (double)s_outdoor.temp);
   } else {
     snprintf(outPart, sizeof(outPart), "out ---");
@@ -484,10 +520,8 @@ void climateBleTick(void) {
       if (netWifiIsBusy()) {
         return;
       }
-      if (!netWifiIsConnected()) {
-        return;
-      }
-      // Během TLS handshake nech scan počkat
+      // Pokojový senzor je lokální — scan neblokovat čekáním na Wi‑Fi/MQTT.
+      // Během TLS handshake nech scan počkat (kromě prvního boot poll).
       if (netMqttIsBusy() && !s_firstPollPending && !s_forcePoll) {
         return;
       }
@@ -498,33 +532,47 @@ void climateBleTick(void) {
         return;
       }
       const bool first = s_firstPollPending;
-      s_firstPollPending = false;
       s_forcePoll = false;
       s_lastPollMs = now;
+      if (s_missRetries >= BLE_MISS_RETRY_MAX) {
+        s_missRetries = 0;
+      }
       s_room.hitThisScan = false;
       s_outdoor.hitThisScan = false;
-      ESP_LOGI(TAG, "poll BEGIN%s (WiFi+MQTT bezi, interval=%lus)",
+      ESP_LOGI(TAG, "poll BEGIN%s (%s, interval=%lus)",
                first ? " first" : "",
+               netWifiIsConnected() ? "WiFi OK" : "bez WiFi",
                (unsigned long)(BLE_POLL_INTERVAL_MS / 1000));
-      uiLvglSetRgbLowBandwidth(true);
+      if (!s_liteHeld) {
+        uiLvglRequestLite(true);
+        s_liteHeld = true;
+      }
       enterPhase(Phase::BleInit);
       break;
     }
 
     case Phase::BleInit: {
-      esp_coex_preference_set(ESP_COEX_PREFER_WIFI);
+      // Paralelní scan: během skenu dej BLE víc RF (Wi‑Fi zůstává připojené)
+      esp_coex_preference_set(ESP_COEX_PREFER_BT);
       ESP_LOGI(TAG, "NimBLE %s...",
                NimBLEDevice::isInitialized() ? "reuse" : "init");
       if (!NimBLEDevice::isInitialized()) {
         NimBLEDevice::init("");
       }
+      // Až PO init — NimBLE jinak přepisuje log level a Duplicate floodí CDC
+      esp_log_level_set("NimBLE", ESP_LOG_ERROR);
+      esp_log_level_set("NimBLEDevice", ESP_LOG_ERROR);
+      esp_log_level_set("NimBLEScan", ESP_LOG_ERROR);
+      esp_log_level_set("NimBLEAdvertising", ESP_LOG_ERROR);
+      esp_log_level_set("NimBLEClient", ESP_LOG_ERROR);
       s_nimbleUp = true;
       NimBLEScan* scan = NimBLEDevice::getScan();
       scan->setScanCallbacks(&s_scanCbs, false);
       scan->setActiveScan(true);
-      scan->setInterval(320);
-      scan->setWindow(80);
-      scan->setDuplicateFilter(false);  // oba senzory
+      scan->setInterval(160);
+      scan->setWindow(80);  // menší RF/CPU zátěž než 120
+      // Dedup: stačí 1 adv na MAC; early-stop po hit room(+outdoor)
+      scan->setDuplicateFilter(true);
       ESP_LOGI(TAG, "scan start %d ms room=%s out=%s", BLE_SCAN_MS,
                BLE_METER_MAC, BLE_OUTDOOR_MAC);
       if (!scan->start(BLE_SCAN_MS, false)) {
@@ -552,9 +600,15 @@ void climateBleTick(void) {
 
     case Phase::Cleanup:
       bleDeinitSafe();
-      uiLvglSetRgbLowBandwidth(false);
-      ESP_LOGI(TAG, "poll END room=%d out=%d",
-               (int)s_room.hitThisScan, (int)s_outdoor.hitThisScan);
+      esp_coex_preference_set(ESP_COEX_PREFER_WIFI);
+      // lite→off → recover v uiLvglTick (refcount)
+      if (s_liteHeld) {
+        uiLvglRequestLite(false);
+        s_liteHeld = false;
+      }
+      ESP_LOGI(TAG, "poll END room=%d out=%d heap=%u",
+               (int)s_room.hitThisScan, (int)s_outdoor.hitThisScan,
+               (unsigned)ESP.getFreeHeap());
       enterPhase(Phase::Idle);
       break;
   }
@@ -562,7 +616,11 @@ void climateBleTick(void) {
   if (s_phase != Phase::Idle && (now - s_lastPollMs) > BLE_POLL_WATCHDOG_MS) {
     ESP_LOGE(TAG, "poll WATCHDOG — force stop phase=%d", (int)s_phase);
     bleDeinitSafe();
-    uiLvglSetRgbLowBandwidth(false);
+    esp_coex_preference_set(ESP_COEX_PREFER_WIFI);
+    if (s_liteHeld) {
+      uiLvglRequestLite(false);
+      s_liteHeld = false;
+    }
     enterPhase(Phase::Idle);
   }
 
@@ -575,7 +633,7 @@ void climateBleTick(void) {
 
 bool climateBleIsOk(void) {
 #if LG_THERMA_BLE_ROOM
-  return s_room.ok;
+  return !isnan(s_room.temp);
 #else
   return false;
 #endif
@@ -645,7 +703,7 @@ int climateBleRssi(void) {
 
 bool climateBleOutdoorIsOk(void) {
 #if LG_THERMA_BLE_ROOM
-  return s_outdoor.ok;
+  return !isnan(s_outdoor.temp);
 #else
   return false;
 #endif

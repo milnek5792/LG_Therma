@@ -40,6 +40,8 @@ extern regulator_objects_t regulatorObj;
 void uiRegulatorCreate(void);
 void uiRegulatorEnsureCreated(void);
 void uiRegulatorOnLeave(void);
+/** NVS po přepnutí obrazovky (volat z uiNavigateTo). */
+void uiRegulatorFlushSave(void);
 void uiRegulatorTick(void);
 lv_obj_t* uiRegulatorScreen(void);
 

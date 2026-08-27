@@ -14,6 +14,8 @@ extern "C" {
 
 void storageInit();
 bool storageLoadWifiEnabled();
+/** true, pokud je klíč wifi_en už v NVS (explicitní volba uživatele / dřívější save). */
+bool storageWifiEnabledIsSet();
 void storageSaveWifiEnabled(bool on);
 bool storageLoadWifiCredentials(char* ssid, size_t ssidLen, char* pass, size_t passLen);
 void storageSaveWifiCredentials(const char* ssid, const char* pass);
@@ -32,6 +34,17 @@ void storageSavePlanConfig(const PlanTydenConfig* cfg);
 
 bool storageLoadRegulatorConfig(RegulatorConfig* cfg);
 void storageSaveRegulatorConfig(const RegulatorConfig* cfg);
+
+/** uiEez.rezim: 0 = auto, 1 = vystupni teplota (UiRezimRegulace). */
+bool storageLoadUiRezim(uint8_t* out);
+void storageSaveUiRezim(uint8_t rezim);
+
+/** Poslední HMI session TČ (přežije FW restart). outSp volitelné. */
+bool storageLoadTcSession(bool* outOn, uint8_t* outSp);
+void storageSaveTcSession(bool on, uint8_t spC);
+/** Odložený zápis — nevolat z LIN tasku (flash blokuje UART). */
+void storageRequestSaveTcSession(bool on, uint8_t spC);
+void storageFlushTcSessionPending(void);
 
 #ifdef __cplusplus
 }

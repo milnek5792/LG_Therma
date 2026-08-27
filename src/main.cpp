@@ -67,6 +67,13 @@ void setup() {
 
   uiEezInit();
   appCmdInit();
+
+  // LIN dřív než LVGL: prio 12 na core 1 naslouchá během pomalého display init.
+  // Jinak se promešká A0 a při VYP TČ čekáme další cyklus (~10–25 s).
+  lgModelInit();
+  lgModelRestoreSessionFromNvs();
+  lgBusStartTask();
+
   uiNetInit();
   uiLvglInit();
 
@@ -79,23 +86,22 @@ void setup() {
     }
   }
 
-  lgModelInit();
-  lgBusStartTask();
-  ESP_LOGI(TAG, "ready — LIN task (defer %u ms), LVGL+ctrl in loop",
-           (unsigned)LG_LIN_START_DELAY_MS);
+  ESP_LOGI(TAG, "ready — LIN prio=%u defer=%u ms, LVGL+ctrl in loop",
+           (unsigned)LG_LIN_TASK_PRIO, (unsigned)LG_LIN_START_DELAY_MS);
 }
 
 void loop() {
   const uint32_t now = millis();
 
+  // LVGL/VSYNC první — LIN/NVS nesmí blokovat flush
+  uiLvglTick();
+
   if (lgBusIsReady()) {
     uiBusBindingsTick();
+    uiBusFlushDeferredStorage();
   } else {
-    // Před LIN init: fronta HMI/MQTT (START/+/-) nesmí čekat na UART
     appCmdDrainCtrl();
   }
-
-  uiLvglTick();
 
   static uint32_t s_lastLoopHb = 0;
   if (now - s_lastLoopHb >= 2000) {

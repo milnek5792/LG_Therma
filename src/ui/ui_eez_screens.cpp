@@ -841,7 +841,7 @@ void tick_screen_main() {
         }
     }
     {
-        // Auto: malý řádek = skutečný SP vody z TČ (A0)
+        // Auto: malý řádek = SP vody (pending / potvrzené A0)
         if (objects.lbl_water_sp) {
             if (get_var_rezim() == 0) {
                 lv_obj_remove_flag(objects.lbl_water_sp, LV_OBJ_FLAG_HIDDEN);
@@ -851,6 +851,14 @@ void tick_screen_main() {
                 const char *cur = lv_label_get_text(objects.lbl_water_sp);
                 if (!cur || strcmp(cur, line) != 0) {
                     lv_label_set_text(objects.lbl_water_sp, line);
+                }
+                uint32_t col = get_var_teplota_vody_set_lin_color();
+                static uint32_t s_waterSpCol = 0;
+                if (s_waterSpCol != col) {
+                    s_waterSpCol = col;
+                    lv_obj_set_style_text_color(
+                        objects.lbl_water_sp, lv_color_hex(col),
+                        LV_PART_MAIN | LV_STATE_DEFAULT);
                 }
             } else {
                 lv_obj_add_flag(objects.lbl_water_sp, LV_OBJ_FLAG_HIDDEN);

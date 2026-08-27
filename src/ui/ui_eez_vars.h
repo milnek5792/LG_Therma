@@ -65,6 +65,7 @@ extern void set_var_plan_title(const char *value);
 extern const char *get_var_sig_wifi____wi_fi__ok_____wi_fi______();
 extern uint32_t get_var_sig_wifi_color(void);
 extern uint32_t get_var_teplota_vody_set_color(void);
+extern uint32_t get_var_teplota_vody_set_lin_color(void);
 extern const char *get_var_sig_mqtt____mqtt__pripojeno_____mqtt______();
 extern bool get_var_sig_mqtt_ble_wait(void);
 extern uint32_t get_var_sig_mqtt_color(void);

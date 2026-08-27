@@ -215,7 +215,6 @@ void publishTeleOfflineMarkers() {
   if (!s_connected) {
     return;
   }
-  uiLvglSetRgbLowBandwidth(true);
   mqttPublishRetain(MQTT_TOPIC_TELE_WATCH, "OFF");
   s_watchPub = 0;
   mqttPublishRetain(MQTT_TOPIC_TELE_LIN, "OFF");
@@ -242,7 +241,6 @@ void publishTeleOfflineMarkers() {
   s_pub.pump = 0;
   s_pub.compressor = keepComp;
   s_pub.alarm = 0;
-  uiLvglSetRgbLowBandwidth(false);
   ESP_LOGI(TAG, "tele → OFF/___ (watch off) compTest=%d", (int)s_compTest);
 }
 
@@ -287,7 +285,6 @@ void watchOff(bool clearTopics = true) {
   s_watchOn = false;
   s_watchUntilMs = 0;
   s_teleIdx = -1;
-  uiLvglSetRgbLowBandwidth(false);
   if (clearTopics && was) {
     // lin + celá telemetrie OFF/___ — i když A0 ještě žije
     publishTeleOfflineMarkers();
@@ -472,7 +469,6 @@ void teleTick() {
     ESP_LOGI(TAG, "tele sync END dt=%lu ms (retain)",
              (unsigned long)(millis() - s_teleStartMs));
     s_teleIdx = -1;
-    uiLvglSetRgbLowBandwidth(false);
   }
 }
 
@@ -486,7 +482,6 @@ void startTeleStaggered() {
   s_pub = TeleSnap{};  // vynutit plný sync
   s_teleIdx = 0;
   s_teleStartMs = millis();
-  uiLvglSetRgbLowBandwidth(true);
   ESP_LOGI(TAG, "tele sync BEGIN (watch) steps=%d", kTeleSyncCount);
   teleTick();
 }
@@ -515,7 +510,6 @@ void telePublishChanges() {
 
   if (lin != s_pub.lin || pow != s_pub.power || pump != s_pub.pump ||
       comp != s_pub.compressor || al != s_pub.alarm || compRefresh) {
-    uiLvglSetRgbLowBandwidth(true);
     if (lin != s_pub.lin) {
       publishStr(MQTT_TOPIC_TELE_LIN, lin ? "ON" : "OFF");
       s_pub.lin = lin;
@@ -541,7 +535,6 @@ void telePublishChanges() {
       s_pub.alarm = al;
       binChanged = true;
     }
-    uiLvglSetRgbLowBandwidth(false);
     if (binChanged) {
       return;
     }
@@ -555,40 +548,30 @@ void telePublishChanges() {
 
   // Teploty: max 1 změna / tick (retain jen platná čísla)
   if (!tempOffline(outlet) && !nearlyEq(outlet, s_pub.outlet)) {
-    uiLvglSetRgbLowBandwidth(true);
     publishOutlet(outlet);
-    uiLvglSetRgbLowBandwidth(false);
     return;
   }
   if (!tempOffline(inlet) && !nearlyEq(inlet, s_pub.inlet)) {
-    uiLvglSetRgbLowBandwidth(true);
     if (publishTemp(MQTT_TOPIC_TELE_TEMP_INLET, inlet)) {
       s_pub.inlet = inlet;
     }
-    uiLvglSetRgbLowBandwidth(false);
     return;
   }
   if (!tempOffline(outdoor) && !nearlyEq(outdoor, s_pub.outdoor)) {
-    uiLvglSetRgbLowBandwidth(true);
     if (publishTemp(MQTT_TOPIC_TELE_TEMP_OUTDOOR, outdoor)) {
       s_pub.outdoor = outdoor;
     }
-    uiLvglSetRgbLowBandwidth(false);
     return;
   }
   if (!tempOffline(setp) && !nearlyEq(setp, s_pub.setp)) {
-    uiLvglSetRgbLowBandwidth(true);
     publishSetpoint();
-    uiLvglSetRgbLowBandwidth(false);
     return;
   }
   if (!tempOffline(uiEez.teplota_vnitrni) &&
       !nearlyEq(uiEez.teplota_vnitrni, s_pub.room)) {
-    uiLvglSetRgbLowBandwidth(true);
     if (publishTemp(MQTT_TOPIC_TELE_TEMP_ROOM, uiEez.teplota_vnitrni)) {
       s_pub.room = uiEez.teplota_vnitrni;
     }
-    uiLvglSetRgbLowBandwidth(false);
     return;
   }
 }
@@ -706,9 +689,9 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   }
   if (topicIs(topic, strlen(topic), MQTT_TOPIC_CMD_MODE)) {
     if (strcasecmp(msg, "auto") == 0) {
-      uiEez.rezim = UI_REZIM_AUTO;
+      uiBusSetRegulationAuto(true);
     } else {
-      uiEez.rezim = UI_REZIM_VYSTUPNI_TEPLOTA;
+      uiBusSetRegulationAuto(false);
     }
     return;
   }
@@ -810,16 +793,24 @@ bool reconnectOnce() {
 
   s_busy = true;
   ESP_LOGI(TAG, "freeze ON (TLS) ms=%lu", (unsigned long)millis());
-  uiLvglSetFrozen(true);
+  uiLvglRequestFreeze(true);
+  bool heldFreeze = true;
   setStatus("Pripojovani...");
 
   climateBleReleaseForTls();
   delay(200);
 
+  auto releaseFreeze = [&]() {
+    if (heldFreeze) {
+      uiLvglRequestFreeze(false);
+      heldFreeze = false;
+    }
+  };
+
   if (!heapOkForTls()) {
     logHeapForTls("TLS odlozen — malo DRAM");
     setStatus("Cekam pamet...");
-    uiLvglSetFrozen(false);
+    releaseFreeze();
     s_busy = false;
     return false;
   }
@@ -828,7 +819,7 @@ bool reconnectOnce() {
   if (!resolveMqttIpv4(ip)) {
     setStatus("DNS selhalo");
     ESP_LOGI(TAG, "freeze OFF (DNS fail) ms=%lu", (unsigned long)millis());
-    uiLvglSetFrozen(false);
+    releaseFreeze();
     s_busy = false;
     return false;
   }
@@ -875,7 +866,7 @@ bool reconnectOnce() {
     s_connected = false;
     delay(500);
     ESP_LOGI(TAG, "freeze OFF (fail) ms=%lu", (unsigned long)millis());
-    uiLvglSetFrozen(false);
+    releaseFreeze();
     s_busy = false;
     return false;
   }
@@ -892,7 +883,7 @@ bool reconnectOnce() {
     setStatus("SUB fail");
     delay(500);
     ESP_LOGI(TAG, "freeze OFF (sub fail) ms=%lu", (unsigned long)millis());
-    uiLvglSetFrozen(false);
+    releaseFreeze();
     s_busy = false;
     return false;
   }
@@ -930,7 +921,7 @@ bool reconnectOnce() {
   delay(800);
   ESP_LOGI(TAG, "freeze OFF (ok) ms=%lu flush_hint=ui",
            (unsigned long)millis());
-  uiLvglSetFrozen(false);
+  releaseFreeze();
   s_busy = false;
   return true;
 }
@@ -1065,6 +1056,12 @@ void netMqttTick() {
     return;
   }
 
+  // První BLE scan před MQTT TLS — jinak scan často selže (RF + heap).
+  if (climateBleBootPollPending()) {
+    setStatus("Cekam BLE...");
+    return;
+  }
+
   if (s_connected) {
     // mqtt.loop méně často — TLS keepalive žere PSRAM bandwidth (RGB underrun)
     static uint32_t s_lastMqttLoopMs = 0;
@@ -1094,7 +1091,6 @@ void netMqttTick() {
     if (s_teleIdx >= 0) {
       if (!teleAllowed()) {
         s_teleIdx = -1;
-        uiLvglSetRgbLowBandwidth(false);
       } else {
         teleTick();
         s_mqtt.loop();  // flush i mezi tele kroky

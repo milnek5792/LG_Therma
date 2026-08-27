@@ -7,6 +7,7 @@
 #include "bus_lg_config.h"
 #include "bus_lg_model.h"
 #include "bus_lg_protocol.h"
+#include "storage_config_nvs.h"
 
 #define TAB5_MBUS_TX_PIN LG_MBUS_TX_PIN
 #define TAB5_MBUS_RX_PIN LG_MBUS_RX_PIN
@@ -18,6 +19,10 @@
 #define LG_BLOKOVAT_ZAPIS_S_ORIG 1
 #define LG_AUTO_OBNOVA_MIN_MS 4500
 #define LG_AUTO_OBNOVA_PO_ORIG_MS 1200
+/** Session ON: jak dlouho musí být A0 úplně VYP (bez pumpy), než znovu pošleme START. */
+#ifndef LG_SESSION_VYP_GRACE_MS
+#define LG_SESSION_VYP_GRACE_MS 45000u
+#endif
 #define LG_ZAPIS_MEZI_KROKY_MS 450
 #define LG_START_KROK1_MS 2500
 #define LG_START_OPAK_MS 3500
@@ -202,6 +207,7 @@ void lgNastavDrzenyStav(uint8_t teplota, bool zapnuto) {
   cilovaTeplotaTab5 = teplota;
   cilovyZapnutoTab5 = zapnuto;
   drzetStavAktivni = true;
+  storageRequestSaveTcSession(zapnuto, teplota);
 }
 
 void lgZrusDrzenyStav() {
@@ -328,10 +334,12 @@ void lgVypisStavB2B3(uint8_t b2, uint8_t b3, uint8_t sub = 0xFF) {
   Serial.println();
   if (sub == 0xFF && lgJePrestartB3(b3)) {
     if (b2 & 0x02) {
-      Serial.println("  -> PRESTART: cerpadlo ON, B3=0x08 (pred C0 32/02/02 — typicky orig.)");
+      Serial.println("  -> B3=0x08 + cerpadlo (cyklus po SP / nebo START-cekani)");
     } else {
-      Serial.println("  -> PRESTART: B3=0x08, monoblok pripravuje rozjezd");
+      Serial.println("  -> B3=0x08 (cyklus pauza / priprava monobloku)");
     }
+  } else if (sub == 0xFF && lgJeCerpadloZap(b2) && b3 == 0x00) {
+    Serial.println("  -> jen PROTOCENI obehoveho cerpadla (B3=0)");
   } else if (sub == 0x30 && b2 == 0x00 && b3 == 0x02) {
     Serial.println("  -> STOP krok 1 (prechod B3=0x02 — jeste neni vypnuto)");
   } else if (sub == 0x30 && b2 == 0x00 && b3 == 0x00) {
@@ -409,17 +417,26 @@ bool lgJeToNasC0(uint8_t *data, uint8_t len) {
 void lgSledujFaziStartuA0(uint8_t b2, uint8_t b3) {
   if (b2 == a0PosledniB2 && b3 == a0PosledniB3) { return; }
 
+  const bool nasStart = lgZapis.aktivni && lgZapis.jeStartSekvence;
   const char* faze;
   if (lgJeStabilniBeh(b3)) {
     faze = "STABILNI BEH (kompresor, B3=0x0A)";
   } else if (lgJePrestartB3(b3)) {
-    faze = (b2 & 0x02)
-        ? "PRESTART (cerpadlo ON, B3=0x08 — ceka C0 32/02/02)"
-        : "PRESTART (B3=0x08 — monoblok pripravuje)";
+    if (nasStart) {
+      faze = (b2 & 0x02)
+          ? "START-CEKANI (B3=0x08, cerpadlo — ceka C0 32/02/02)"
+          : "START-CEKANI (B3=0x08)";
+    } else {
+      faze = (b2 & 0x02)
+          ? "CYKLUS pauza (B3=0x08 + cerpadlo — po SP vody)"
+          : "CYKLUS pauza (B3=0x08 — po SP vody)";
+    }
   } else if (lgJeZapnuto(b3) && (b2 & 0x02)) {
-    faze = "ROZJEZD (cerpadlo+k prikaz, B3=0x02 bez 0x08)";
+    faze = "ROZJEZD (cerpadlo+prikaz, B3=0x02)";
   } else if (lgJeZapnuto(b3)) {
     faze = "ROZJEZD (prikaz ZAP, cerpadlo OFF)";
+  } else if (lgJeCerpadloZap(b2)) {
+    faze = "PROTOCENI (jen obehove cerpadlo, B3=0)";
   } else {
     faze = "VYP";
   }
@@ -662,6 +679,51 @@ void lgReagujNaOrigC0(uint8_t *data, uint8_t delka) {
   casPosledniAutoObnova = millis();
 }
 
+/**
+ * Po FW restartu: NVS už může session obnovit hned.
+ * A0 průběžně — topný cyklus, nebo čerpadlo při známkách topení → session ON (bez C0).
+ * Čisté protocení bez teplot/SP session nezapíná.
+ */
+inline void lgAdoptujSessionZA0(uint8_t *data, uint8_t delka) {
+  if (delka < 4 || data[0] != 0xA0) {
+    return;
+  }
+  if (cekameNaOrigStart || lgZapisAktivni() || pozadavekNaZapis) {
+    return;
+  }
+  if (drzetStavAktivni && cilovyZapnutoTab5) {
+    return;
+  }
+
+  const uint8_t b2 = data[2];
+  const uint8_t b3 = data[3];
+  const uint8_t sp = (delka > 8) ? data[8] : 0;
+  const uint8_t tin = (delka > 11) ? data[11] : mVstupni;
+  const uint8_t tout = (delka > 12) ? data[12] : mVystupni;
+
+  const bool topi = lgJeTcProvoz(b2, b3);
+  // Pumpa + platné SP + teplá voda → typicky cyklus po SP, ne studené protocení
+  const bool cerpadloVProvozu =
+      lgJeCerpadloZap(b2) && (sp >= 15 && sp <= 65) &&
+      ((tin >= 20) || (tout >= 20));
+
+  if (!topi && !cerpadloVProvozu) {
+    return;
+  }
+
+  const uint8_t t =
+      (sp >= 15 && sp <= 65) ? sp
+                            : ((mCilova >= 15 && mCilova <= 65) ? mCilova : 35);
+  lgNastavDrzenyStav(t, true);
+  tcPozadavekZap = true;
+  if (!pozadavekNaZapis) {
+    mCilova = t;
+  }
+  Serial.printf("[BOOT] Session ON z A0 T=%u B2=%02X B3=%02X (%s)%s\n", t, b2,
+                b3, lgPopisTcB3(b3),
+                (!topi && cerpadloVProvozu) ? " cerpadlo" : "");
+}
+
 void lgZkontrolujObnovuStavu(uint8_t *data, uint8_t delka) {
   if (delka < 4) { return; }
 
@@ -673,6 +735,7 @@ void lgZkontrolujObnovuStavu(uint8_t *data, uint8_t delka) {
   }
 
   if (data[0] == 0xA0) {
+    lgAdoptujSessionZA0(data, delka);
     lgKontrolujPrestartA0(data, delka);
     lgAutoVypniDrzetPoCili(data[2], data[3]);
 
@@ -683,9 +746,12 @@ void lgZkontrolujObnovuStavu(uint8_t *data, uint8_t delka) {
         lgDokoncStartOdOrig("orig. PRESTART cerpadlo");
       }
     }
-    if (!lgJeTcUplneVyp(data[2], data[3]) && !cekameNaOrigStart) {
+    if (lgJeTcProvoz(data[2], data[3]) && !cekameNaOrigStart) {
+      // Jen topný cyklus / B3=0x08 — ne samotné protocení čerpadla
       tcPozadavekZap = true;
-    } else if (lgJeTcUplneVyp(data[2], data[3]) && !cekameNaOrigStart && !lgZapisAktivni()) {
+    } else if (!lgJeTcProvoz(data[2], data[3]) && !cekameNaOrigStart &&
+               !lgZapisAktivni() && !cilovyZapnutoTab5) {
+      // Při session ON necháme tcPozadavekZap (cyklus s pumpou mezi kompresory)
       tcPozadavekZap = false;
     }
   }
@@ -700,19 +766,46 @@ void lgZkontrolujObnovuStavu(uint8_t *data, uint8_t delka) {
   }
   if (millis() - casPosledniAutoObnova < LG_AUTO_OBNOVA_MIN_MS) { return; }
 
-  bool stavNaSbernici = lgJeTcProvoz(data[2], data[3]);
-  bool cilStav = cilovyZapnutoTab5;
-  // SP proti A0 se neobnovuje zde — UI ukazuje A0; Auto SP řeší regulátor.
-  // Session jen drží ON/OFF (po našem START/STOP).
-  if (stavNaSbernici == cilStav) {
+  const bool topiNeboCyklus = lgJeTcProvoz(data[2], data[3]);
+  const bool busZiva = lgJeTcSessionZiva(data[2], data[3]);
+  const bool cilStav = cilovyZapnutoTab5;
+
+  // Session ON: protocení / B3=0x08 mezi cykly = OK.
+  // Re-START až po delším skutečném klidu (B2=0,B3=0), ne při každém vypnutí pumpy.
+  static unsigned long s_sessionVypOdMs = 0;
+  if (cilStav) {
+    if (busZiva) {
+      s_sessionVypOdMs = 0;
+      return;
+    }
+    if (s_sessionVypOdMs == 0) {
+      s_sessionVypOdMs = millis();
+    }
+    if ((millis() - s_sessionVypOdMs) < LG_SESSION_VYP_GRACE_MS) {
+      return;
+    }
+  } else {
+    s_sessionVypOdMs = 0;
+    // Session OFF: samotné protocení (pumpa) neřešíme; jen skutečný topný cyklus
+    if (!topiNeboCyklus) {
+      return;
+    }
+  }
+
+  // SOLO: nikdy auto-STOP ze SESSION (HMI je master).
+  if (soloRezimTab5 && !cilStav) {
+    Serial.printf(
+        "\n[SESSION] SOLO: A0=topi ale session=VYP — NEPosilam auto-STOP (cekam HMI)\n");
     return;
   }
 
-  Serial.printf("\n[SESSION] A0 ukazuje %s, chceme %s — znovu odesilame\n",
-                stavNaSbernici ? "ZAP" : "VYP", cilovyZapnutoTab5 ? "ZAP" : "VYP");
+  Serial.printf("\n[SESSION] A0=%s, chceme %s — znovu odesilame\n",
+                topiNeboCyklus ? "TOPI/CYKLUS" : (busZiva ? "PUMPA" : "VYP"),
+                cilovyZapnutoTab5 ? "ZAP" : "VYP");
   lgZapisSpust(cilovaTeplotaTab5, cilovyZapnutoTab5, true);
   casPosledniAutoObnova = millis();
   casPosledniC0Orig = 0;
+  s_sessionVypOdMs = 0;
 }
 
 void lgZapisObsluha() {

@@ -3,6 +3,7 @@
 // Priority (varianta A):
 //   Auto:  voda = jen regulátor; pokoj = HMI|MQTT (last-write-wins); plán = offset/VYP
 //   Ruční: voda = HMI|MQTT|plán; regulátor vypnutý
+//   SP vody (všechny zdroje): pozadavekNaZapis + sp_pending → C0 33, potvrzení A0 B8
 //   Power STOP vždy z HMI / MQTT / plánu
 #ifndef UI_BUS_BINDINGS_H
 #define UI_BUS_BINDINGS_H
@@ -32,7 +33,15 @@ void uiBusQueuePower(bool start);
 void uiBusQueueSetpointC(uint8_t teplotaC);
 void uiBusQueueAdjustSetpoint(int deltaC);
 
+/** Nastaví a zapamatuje režim Auto / ruční. */
+bool uiBusSetRegulationAuto(bool enable);
+
+/** Uloží uiEez.rezim do NVS. */
+void uiBusPersistRezim(void);
+
 void uiBusBindingsTick(void);
+/** NVS session — odloženě, volat až po uiLvglTick (flash neblokuje VSYNC). */
+void uiBusFlushDeferredStorage(void);
 
 /** Zpracování ctrl zpráv z appCmdDrainCtrl (LIN / SP / power). */
 void uiBusProcessAppMsg(const AppMsg* msg);

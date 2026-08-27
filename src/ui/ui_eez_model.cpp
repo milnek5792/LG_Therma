@@ -5,6 +5,7 @@
 #include "bus_lg_lin_api.h"
 #include "bus_lg_model.h"
 #include "bus_lg_protocol.h"
+#include "storage_config_nvs.h"
 
 #include <cstdio>
 #include <cstring>
@@ -40,6 +41,12 @@ void uiEezInit() {
   uiEez.teplota_venkovni = UI_TEPLOTA_NEPLATNA;
   uiEez.teplota_spad = UI_TEPLOTA_NEPLATNA;
   uiEez.rezim = UI_REZIM_VYSTUPNI_TEPLOTA;
+  {
+    uint8_t saved = UI_REZIM_VYSTUPNI_TEPLOTA;
+    if (storageLoadUiRezim(&saved)) {
+      uiEez.rezim = (UiRezimRegulace)saved;
+    }
+  }
   uiEez.stav_tc = UI_STAV_VYP;
   uiEez.sig_wifi = false;
   uiEez.sig_mqtt = false;
@@ -79,52 +86,54 @@ void uiEezNastavTeplotuVnitrni(float c) { uiEez.teplota_vnitrni = c; }
 void uiEezNastavTeplotuVenkovni(float c) { uiEez.teplota_venkovni = c; }
 
 void uiEezSyncFromBus() {
-  lgModelLock();
+  LgModelUiSnap bus{};
+  lgModelReadUiSnap(&bus);
 
-  // LIN „live“ — A0 mladší než LG_A0_FRESH_MS (default 1 min)
-  // (lgMaCerstoA0 / A0Bajt berou recursive mutex — OK)
-  const bool maA0 = lgMaCerstoA0();
-  uint8_t b2 = lgModelA0Bajt(2);
-  uint8_t b3 = lgModelA0Bajt(3);
+  const bool linLive = bus.lin_live;
+  const uint8_t b2 = bus.b2;
+  const uint8_t b3 = bus.b3;
+  const uint8_t cilova =
+      bus.pozadavek_zapis ? bus.nova_cilova : bus.m_cilova;
 
-  uint8_t cilova = pozadavekNaZapis ? novaCilovaTeplota : mCilova;
-  // Venkovní T jen z BLE outdoor — LIN A0 B5 se nepoužívá
+  const uint8_t a0Sp = linLive ? bus.a0_sp : 0;
+  const bool a0SpPlatny = linLive && a0Sp >= 15 && a0Sp <= 65;
 
-  if (uiEez.rezim != UI_REZIM_AUTO) {
-    const uint8_t a0Sp = maA0 ? lgModelA0Bajt(8) : 0;
-    const bool a0SpPlatny = maA0 && a0Sp >= 15 && a0Sp <= 65;
-
-    if (uiEez.sp_pending != 0) {
-      if (a0SpPlatny && a0Sp == uiEez.sp_pending) {
-        uiEez.sp_pending = 0;
-        uiEez.teplota_vody_set = static_cast<float>(a0Sp);
-      } else {
-        uiEez.teplota_vody_set = static_cast<float>(uiEez.sp_pending);
-      }
-    } else if (a0SpPlatny) {
+  if (uiEez.sp_pending != 0) {
+    if (a0SpPlatny && a0Sp == uiEez.sp_pending) {
+      uiEez.sp_pending = 0;
       uiEez.teplota_vody_set = static_cast<float>(a0Sp);
-    } else if (cilova >= 15 && cilova <= 65) {
-      uiEez.teplota_vody_set = static_cast<float>(cilova);
     } else {
-      uiEez.teplota_vody_set = UI_TEPLOTA_NEPLATNA;
+      uiEez.teplota_vody_set = static_cast<float>(uiEez.sp_pending);
     }
-  } else if (maA0) {
-    const uint8_t a0Sp = lgModelA0Bajt(8);
-    if (a0Sp >= 15 && a0Sp <= 65) {
-      uiEez.teplota_vody_set = static_cast<float>(a0Sp);
-    } else if (cilova >= 15 && cilova <= 65) {
-      uiEez.teplota_vody_set = static_cast<float>(cilova);
-    }
-  } else if (cilova < 15) {
+  } else if (a0SpPlatny) {
+    uiEez.teplota_vody_set = static_cast<float>(a0Sp);
+  } else if (cilova >= 15 && cilova <= 65) {
+    uiEez.teplota_vody_set = static_cast<float>(cilova);
+  } else {
     uiEez.teplota_vody_set = UI_TEPLOTA_NEPLATNA;
   }
 
-  uiEez.teplota_vody_vstup = uiTeplotaC(mVstupni, maA0 && mVstupni > 0);
-  uiEez.teplota_vody_vystup = uiTeplotaC(mVystupni, maA0 && mVystupni > 0);
-  // uiEez.teplota_venkovni nastavuje climate_ble_room
+  // Po STOP A0 často pošle B11/B12=0 — drž poslední platné, dokud LIN žije.
+  static uint8_t s_holdVstup = 0;
+  static uint8_t s_holdVystup = 0;
+  if (linLive) {
+    if (bus.m_vstupni > 0) {
+      s_holdVstup = bus.m_vstupni;
+    }
+    if (bus.m_vystupni > 0) {
+      s_holdVystup = bus.m_vystupni;
+    }
+  }
+  const uint8_t vstupShow =
+      (bus.m_vstupni > 0) ? bus.m_vstupni : s_holdVstup;
+  const uint8_t vystupShow =
+      (bus.m_vystupni > 0) ? bus.m_vystupni : s_holdVystup;
+  const bool teplotaPlatna = linLive && vstupShow > 0;
+  uiEez.teplota_vody_vstup = uiTeplotaC(vstupShow, teplotaPlatna);
+  uiEez.teplota_vody_vystup = uiTeplotaC(vystupShow, teplotaPlatna);
 
-  if (maA0 && mVstupni > 0 && mVystupni > 0) {
-    uiEez.teplota_spad = (float)((int)mVystupni - (int)mVstupni);
+  if (linLive && vstupShow > 0 && vystupShow > 0) {
+    uiEez.teplota_spad = (float)((int)vystupShow - (int)vstupShow);
     if (uiEez.teplota_spad < 0) {
       uiEez.teplota_spad = -uiEez.teplota_spad;
     }
@@ -132,35 +141,31 @@ void uiEezSyncFromBus() {
     uiEez.teplota_spad = UI_TEPLOTA_NEPLATNA;
   }
 
-  // ZAPNUTO = držený režim od START do STOP (čerpadlo může přijít se zpožděním)
-  const bool drzenyZap =
-      cilovyZapnutoTab5 || tcPozadavekZap || cekameNaOrigStart;
-  uiEez.sig_chod = drzenyZap;
+  uiEez.sig_chod =
+      bus.cilovy_zapnuto || bus.cekame_orig || bus.tc_pozadavek;
 
-  uiEez.sig_cerpadlo = maA0 && lgJeCerpadloZap(b2);
-  // Kompresor: stabilní 0x0A i rozjezd 0x02 (ne jen StabilniBeh)
-  uiEez.sig_kompresor = maA0 && lgJeKompresorBezi(b3);
-  uiEez.sig_el_topeni = maA0 && ((b2 & 0x04) != 0);
-  uiEez.sig_odmrazovani = maA0 && ((b3 & 0x04) != 0);
+  uiEez.sig_cerpadlo = linLive && lgJeCerpadloZap(b2);
+  uiEez.sig_kompresor = linLive && lgJeKompresorBezi(b3);
+  uiEez.sig_el_topeni = linLive && ((b2 & 0x04) != 0);
+  uiEez.sig_odmrazovani = linLive && ((b3 & 0x04) != 0);
 
-  if (!drzenyZap) {
+  if (!bus.cilovy_zapnuto && !bus.cekame_orig && !bus.tc_pozadavek) {
     uiEez.stav_tc = UI_STAV_VYP;
-  } else if (cekameNaOrigStart && !(maA0 && lgJeTcProvoz(b2, b3))) {
+  } else if (bus.cekame_orig && !(linLive && lgJeTcProvoz(b2, b3))) {
     uiEez.stav_tc = UI_STAV_CEKAM_ORIG;
-  } else if (maA0 && lgJePrestartB3(b3)) {
+  } else if (bus.cekame_orig) {
     uiEez.stav_tc = UI_STAV_PRESTART;
-  } else if (maA0 && lgJeTcProvoz(b2, b3)) {
+  } else if (linLive && (lgJeTcProvoz(b2, b3) || lgJeCerpadloZap(b2))) {
     uiEez.stav_tc = UI_STAV_BEH;
-  } else {
-    // START už držíme, potvrzení ze sběrnice ještě ne
+  } else if (bus.cilovy_zapnuto) {
     uiEez.stav_tc = UI_STAV_PRESTART;
+  } else {
+    uiEez.stav_tc = UI_STAV_VYP;
   }
-
-  lgModelUnlock();
 }
 
 uint32_t uiEezTeplotaVodySetColor(void) {
-  if (uiEez.rezim == UI_REZIM_AUTO || uiEez.sp_pending == 0) {
+  if (uiEez.sp_pending == 0) {
     return UI_SP_COLOR_OK;
   }
   if ((millis() - uiEez.sp_pending_ms) >= spPendingWarnMs()) {

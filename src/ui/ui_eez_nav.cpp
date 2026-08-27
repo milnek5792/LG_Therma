@@ -4,6 +4,7 @@
 #include "ui_eez_plan.h"
 #include "ui_eez_regulator.h"
 #include "ui_eez_settings.h"
+#include "ui_eez_signal_leds.h"
 #include "ui_eez_ui.h"
 #include "ui_eez_wifi_form.h"
 #include "ui_panel_scale.h"
@@ -20,6 +21,8 @@ void uiNavigateTo(enum ScreensEnum screenId) {
       uiGetCurrentScreen() == SCREEN_ID_PLAN && screenId != SCREEN_ID_PLAN;
   const bool leavingReg = uiGetCurrentScreen() == SCREEN_ID_REGULATOR &&
                           screenId != SCREEN_ID_REGULATOR;
+  const bool enteringReg = screenId == SCREEN_ID_REGULATOR &&
+                           uiGetCurrentScreen() != SCREEN_ID_REGULATOR;
   if (leavingPlan) {
     uiPlanOnLeave();
   }
@@ -36,11 +39,22 @@ void uiNavigateTo(enum ScreensEnum screenId) {
     uiRegulatorEnsureCreated();
   }
   loadScreen(screenId);
+  if (screenId == SCREEN_ID_MAIN) {
+    uiEezRefreshRegStatus();
+  }
   uiLvglSetPointerInput(true);
   if (leavingPlan) {
     uiPlanFlushSave();
     uiLvglScheduleRecover("post_plan", false, 100);
     uiLvglScheduleRecover("post_plan_hard", true, 480);
+  }
+  if (leavingReg) {
+    uiRegulatorFlushSave();
+    uiLvglScheduleRecover("post_reg", false, 150);
+  }
+  if (enteringReg) {
+    // Soft po usazení screenu — hard DMA restart při vstupu grafiku rozhodí
+    uiLvglScheduleRecover("enter_reg", false, 200);
   }
   if (screenId != SCREEN_ID_WIFI_SETUP) {
     uiTouchVisualInit();

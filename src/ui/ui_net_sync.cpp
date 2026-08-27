@@ -37,6 +37,7 @@ void netTask(void* /*arg*/) {
 
   uint32_t freezeUntilMs = 0;
   uint32_t lastHbMs = 0;
+  bool heldWifiFreeze = false;
 
   for (;;) {
     const bool wifiBusy = netWifiIsBusy();
@@ -44,20 +45,30 @@ void netTask(void* /*arg*/) {
     const bool bleBusy = climateBleIsBusy();
     const uint32_t now = millis();
 
-    if (wifiBusy || bleBusy) {
-      if (!uiLvglIsFrozen() && freezeUntilMs == 0) {
-        freezeUntilMs = now + (bleBusy ? 12000 : 3500);
-        uiLvglSetFrozen(true);
-        ESP_LOGI(TAG, "LVGL freeze (%s)", bleBusy ? "BLE" : "Wi-Fi");
-      } else if (uiLvglIsFrozen() && now >= freezeUntilMs && !mqttBusy &&
-                 !bleBusy) {
-        uiLvglSetFrozen(false);
+    // BLE lite řeší climate_ble_room (refcount). Wi‑Fi freeze jen pokud držíme my.
+    if (bleBusy) {
+      if (heldWifiFreeze) {
+        uiLvglRequestFreeze(false);
+        heldWifiFreeze = false;
+      }
+      freezeUntilMs = 0;
+    } else if (wifiBusy) {
+      if (!heldWifiFreeze && freezeUntilMs == 0) {
+        freezeUntilMs = now + 3500;
+        uiLvglRequestFreeze(true);
+        heldWifiFreeze = true;
+        ESP_LOGI(TAG, "LVGL freeze (Wi-Fi)");
+      } else if (heldWifiFreeze && now >= freezeUntilMs && !mqttBusy) {
+        uiLvglRequestFreeze(false);
+        heldWifiFreeze = false;
+        freezeUntilMs = 0;
         ESP_LOGI(TAG, "LVGL unfreeze");
       }
     } else if (!mqttBusy) {
       freezeUntilMs = 0;
-      if (uiLvglIsFrozen()) {
-        uiLvglSetFrozen(false);
+      if (heldWifiFreeze) {
+        uiLvglRequestFreeze(false);
+        heldWifiFreeze = false;
       }
     }
 

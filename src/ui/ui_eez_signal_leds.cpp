@@ -19,16 +19,18 @@ constexpr uint32_t kMuted = 0x8E8E93u;
 constexpr uint32_t kBtnBg = 0x1A1A1Fu;
 constexpr uint32_t kBtnBgOn = 0x14301Cu;
 
+// Vedle MQTT (572) — někdo sleduje z mobilu přes MQTT watch
 constexpr int kEyeX = 710;
 constexpr int kEyeY = 14;
-// Za okem (MQTT watch) — režim regulace MAN / PID / EKV
-constexpr int kRegX = 760;
+// Vedle MQTT oka — MAN / PID / EKV (pevná pozice, ASCII font)
+constexpr int kRegX = 930;
 constexpr int kRegY = 15;
 
 enum RegStatusKind : int8_t {
   kRegMan = 0,
   kRegPid = 1,
   kRegEkv = 2,
+  kRegEco = 3,
 };
 
 struct SignalLedDef {
@@ -141,33 +143,37 @@ static RegStatusKind currentRegStatus(void) {
   if (uiEez.rezim != UI_REZIM_AUTO) {
     return kRegMan;
   }
+  if (climateRegulatorIsEcoMode()) {
+    return kRegEco;
+  }
   return climateRegulatorUseEquitherm() ? kRegEkv : kRegPid;
 }
 
 static void ensureRegWidget(void) {
-  if (!objects.main || s_lblReg) {
+  if (!objects.main) {
     return;
   }
-  s_lblReg = lv_label_create(objects.main);
+  if (!s_lblReg) {
+    s_lblReg = lv_label_create(objects.main);
+    lv_obj_remove_flag(s_lblReg, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_text_font(s_lblReg, &lv_font_montserrat_22,
+                               LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_align(s_lblReg, LV_TEXT_ALIGN_LEFT,
+                                LV_PART_MAIN | LV_STATE_DEFAULT);
+  }
   lv_obj_set_pos(s_lblReg, kRegX, kRegY);
-  lv_obj_set_style_text_font(s_lblReg, &ui_font_font_cs_24,
-                             LV_PART_MAIN | LV_STATE_DEFAULT);
-  lv_obj_set_style_text_align(s_lblReg, LV_TEXT_ALIGN_LEFT,
-                              LV_PART_MAIN | LV_STATE_DEFAULT);
-  lv_obj_remove_flag(s_lblReg, LV_OBJ_FLAG_CLICKABLE);
-  lv_label_set_text(s_lblReg, "MAN");
-  lv_obj_set_style_text_color(s_lblReg, lv_color_hex(kMuted),
-                              LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_remove_flag(s_lblReg, LV_OBJ_FLAG_HIDDEN);
   lv_obj_move_foreground(s_lblReg);
 }
 
-static void applyRegStatus(void) {
+static void applyRegStatus(bool force) {
+  ensureRegWidget();
   if (!s_lblReg) {
     return;
   }
   const RegStatusKind kind = currentRegStatus();
   static int8_t s_last = -1;
-  if (s_last == (int8_t)kind) {
+  if (!force && s_last == (int8_t)kind) {
     return;
   }
   s_last = (int8_t)kind;
@@ -180,6 +186,9 @@ static void applyRegStatus(void) {
   } else if (kind == kRegEkv) {
     text = "EKV";
     col = kOnBlue;
+  } else if (kind == kRegEco) {
+    text = "ECO";
+    col = kOnOrange;
   }
   lv_label_set_text(s_lblReg, text);
   lv_obj_set_style_text_color(s_lblReg, lv_color_hex(col),
@@ -259,5 +268,12 @@ void uiEezApplySignalLeds(void) {
 
   applyStartButton(uiEez.sig_chod);
   applyEye(uiEez.sig_remote);
-  applyRegStatus();
+  applyRegStatus(false);
+}
+
+void uiEezRefreshRegStatus(void) {
+  if (!uiIsMainScreen()) {
+    return;
+  }
+  applyRegStatus(true);
 }

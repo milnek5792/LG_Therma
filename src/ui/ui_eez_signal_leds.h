@@ -3,5 +3,7 @@
 
 void uiEezInitSignalLeds(void);
 void uiEezApplySignalLeds(void);
+/** Vynutit překreslení MAN/PID/EKV (např. po návratu na hlavní obrazovku). */
+void uiEezRefreshRegStatus(void);
 
 #endif

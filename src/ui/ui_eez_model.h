@@ -97,7 +97,7 @@ struct UiEezModel {
   float teplota_venkovni;
   float teplota_spad;
 
-  /** Ruční +/-: cmd na displeji hned; 0 = potvrzeno A0 B8. */
+  /** Požadovaný SP vody; 0 = potvrzeno A0 B8 (ruční i regulátor). */
   uint8_t sp_pending;
   uint32_t sp_pending_ms;
 

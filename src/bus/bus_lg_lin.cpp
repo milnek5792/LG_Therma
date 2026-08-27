@@ -53,12 +53,45 @@ static void lgObsluhaPozadavekNaZapis() {
   }
 
   const bool zmenaStartu = pozadavekZmenaStartu;
-  if (lgZapisAktivni() && lgZapis.jeStartSekvence && zmenaStartu) {
+
+  // Jen další START během START sekvence odlož. STOP smí preemptovat.
+  // PRESTART (čekání B3=0x08): čerpadlo už běží a přijímá C0 33 — SP neblokovat.
+  if (lgZapisAktivni() && lgZapis.jeStartSekvence && zmenaStartu &&
+      cilovyZapnutoTab5) {
     lgModelUnlock();
     return;
   }
 
-  // +/-: ve slotu za A0 jen při rychlé sběrnici; jinak C0 hned (TČ OFF ≈ 10–20 s)
+  // +/- během START/PRESTART: pošli C0 33, START frontu nesahej
+  if (!zmenaStartu && lgZapisAktivni() && lgZapis.jeStartSekvence) {
+    const uint8_t teplota = novaCilovaTeplota;
+    const bool zap = cilovyZapnutoTab5 || stavZapnuto;
+    pozadavekNaZapis = false;
+    pozadavekZmenaStartu = false;
+    s_spReqMs = 0;
+    s_a0SinceSpReq = false;
+    lgModelUnlock();
+
+    uint8_t b2 = lgPosledniA0B2;
+    uint8_t b3 = lgPosledniA0B3;
+    if (!zap && !lgJeCerpadloZap(b2)) {
+      b2 = 0x00;
+      b3 = 0x00;
+    } else if (lgJeCerpadloZap(b2) && !lgJeZapnuto(b3) && !lgJePrestartB3(b3)) {
+      b2 = 0x02;
+      b3 = 0x00;
+    }
+    uint8_t pkt[LG_PAKET_LEN];
+    lgSestavC0ZVzoru(pkt, teplota, 0x33, b2, b3);
+    ESP_LOGI(TAG, "SP behem PRESTART/START — C0 33 T=%u (sekvence bezi dal)",
+             (unsigned)teplota);
+    Serial.printf("[ZAPIS] Teplota=%u C (C0 33 B2=%02X B3=%02X) behem START\n",
+                  teplota, b2, b3);
+    lgOdesliC0Paket(pkt);
+    return;
+  }
+
+  // +/-: volitelný slot za A0 jen při rychlé sběrnici (~800 ms).
   if (!zmenaStartu) {
     if (s_spReqMs == 0) {
       s_spReqMs = millis();
@@ -121,11 +154,16 @@ void lgBusTick() {
 
   if (indexLg > 0
       && (indexLg >= sizeof(bufferLg) || (millis() - posledniBajtMs > 40))) {
+    // Quiet parse default: Serial dump v linTask hladoví RX (CDC timeout).
+#if LG_LIN_QUIET_PARSE
+    odposlechSberniceTichy(bufferLg, indexLg);
+#else
     if (monitorPozastaven || netSdioTlsBusy()) {
       odposlechSberniceTichy(bufferLg, indexLg);
     } else {
       odposlechSbernice(bufferLg, indexLg);
     }
+#endif
 
     if (bufferLg[0] == 0xA0 && indexLg >= 14) {
       const unsigned long nowMs = millis();

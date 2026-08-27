@@ -110,12 +110,19 @@ const char* get_var_teplota_vody_set() {
 void set_var_teplota_vody_set(float value) { uiEez.teplota_vody_set = value; }
 
 uint32_t get_var_teplota_vody_set_color(void) {
+  if (uiEez.rezim == UI_REZIM_AUTO) {
+    return UI_SP_COLOR_OK;
+  }
   return uiEezTeplotaVodySetColor();
 }
 
-/** Skutečný SP vody z TČ (A0) — i v Auto. */
+/** Skutečný SP vody z TČ (A0) — i v Auto. Pending = ještě nepotvrzeno. */
 const char* get_var_teplota_vody_set_lin() {
   return fmtTemp(uiEez.teplota_vody_set);
+}
+
+uint32_t get_var_teplota_vody_set_lin_color(void) {
+  return uiEezTeplotaVodySetColor();
 }
 
 const char* get_var_teplota_vody_vstup() { return fmtTemp(uiEez.teplota_vody_vstup); }

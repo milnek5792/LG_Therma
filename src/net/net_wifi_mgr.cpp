@@ -171,11 +171,11 @@ void netWifiInit() {
 
   const bool hasCreds = loadCredentials();
   s_enabled = storageLoadWifiEnabled();
-  // Po flashi / prázdné NVS: když jsou credentials, Wi‑Fi zapni automaticky
-  if (!s_enabled && hasCreds) {
+  // Po flashi: credentials bez klíče wifi_en → zapni. Explicitní vypnutí respektuj.
+  if (!s_enabled && hasCreds && !storageWifiEnabledIsSet()) {
     s_enabled = true;
     storageSaveWifiEnabled(true);
-    Serial.println("[NET] Wi-Fi auto-enable (creds v NVS)");
+    Serial.println("[NET] Wi-Fi auto-enable (creds v NVS, wifi_en unset)");
   }
 
   if (s_enabled) {

@@ -11,6 +11,7 @@
 #include "ui_eez_ntp_label.h"
 #include "ui_eez_signal_leds.h"
 #include "ui_net_sync.h"
+#include "climate_ble_room.h"
 #include "net_wifi_mgr.h"
 #include "ui_eez_ui.h"
 #include "ui_panel_scale.h"
@@ -21,6 +22,8 @@
 #include <esp_lcd_panel_rgb.h>
 #include <esp_timer.h>
 #include <freertos/semphr.h>
+#include <atomic>
+#include <cstring>
 
 namespace {
 
@@ -63,7 +66,73 @@ uint32_t s_frozenSinceMs = 0;
 bool s_wasAsleep = false;
 bool s_wasFrozen = false;
 
+/** Cross-core požadavky — aplikuje jen uiLvglTick (core 1). */
+std::atomic<int> s_liteRef{0};
+std::atomic<int> s_freezeRef{0};
+std::atomic<uint8_t> s_reqSoftRecover{0};
+std::atomic<uint8_t> s_reqHardRecover{0};
+bool s_appliedLite = false;
+bool s_appliedFreeze = false;
+
 constexpr uint32_t kHardRecoverCooldownMs = 900;
+
+void bumpRef(std::atomic<int>& ref, bool on) {
+  if (on) {
+    ref.fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  int prev = ref.load(std::memory_order_relaxed);
+  while (prev > 0) {
+    if (ref.compare_exchange_weak(prev, prev - 1, std::memory_order_relaxed)) {
+      return;
+    }
+  }
+}
+
+void applyDisplayReqs(void) {
+  if (!s_initDone) {
+    return;
+  }
+
+  const bool wantLite = s_liteRef.load(std::memory_order_relaxed) > 0;
+  const bool wantFreeze = s_freezeRef.load(std::memory_order_relaxed) > 0;
+
+  if (wantLite != s_appliedLite) {
+    const bool wasLite = s_appliedLite;
+    s_appliedLite = wantLite;
+    s_displayLite = wantLite;
+    if (wasLite && !wantLite && !uiDisplayIsAsleep()) {
+      uiLvglScheduleRecover("lite_off", false, 80);
+      uiLvglScheduleRecover("lite_off_hard", true, 420);
+    }
+  }
+
+  if (wantFreeze != s_appliedFreeze) {
+    s_appliedFreeze = wantFreeze;
+    if (wantFreeze) {
+      if (!s_frozen) {
+        s_frozen = true;
+        s_frozenSinceMs = millis();
+        s_wasFrozen = true;
+      }
+    } else if (s_frozen) {
+      s_frozen = false;
+      s_frozenSinceMs = 0;
+      if (s_wasFrozen) {
+        uiLvglScheduleRecover("unfreeze", false, 80);
+        uiLvglScheduleRecover("unfreeze_hard", true, 420);
+      }
+      s_wasFrozen = false;
+    }
+  }
+
+  if (s_reqHardRecover.exchange(0, std::memory_order_relaxed) != 0) {
+    uiLvglScheduleRecover("req_hard", true, 20);
+  }
+  if (s_reqSoftRecover.exchange(0, std::memory_order_relaxed) != 0) {
+    uiLvglScheduleRecover("req_soft", false, 20);
+  }
+}
 
 bool onVsync(esp_lcd_panel_handle_t panel, const esp_lcd_rgb_panel_event_data_t* edata, void* user_ctx) {
   (void)panel;
@@ -87,16 +156,16 @@ void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* pxMap) {
   if (panel && lv_display_flush_is_last(disp) && pxMap) {
     esp_lcd_panel_draw_bitmap(
         panel, 0, 0, BOARD_PANEL_W, BOARD_PANEL_H, pxMap);
-    if (s_touchArmed && s_vsyncSem) {
+    if (s_initDone && s_vsyncSem) {
       xSemaphoreTake(s_vsyncSem, 0);
-      // Čekej na VSYNC (max ~2 snímky @ ~30–60 Hz)
-      if (xSemaphoreTake(s_vsyncSem, pdMS_TO_TICKS(50)) != pdTRUE) {
+      // Čekej na VSYNC (max ~3 snímky @ ~50 Hz)
+      if (xSemaphoreTake(s_vsyncSem, pdMS_TO_TICKS(100)) != pdTRUE) {
         uint8_t miss = s_vsyncMissStreak;
         if (miss < 255) {
           ++miss;
         }
         s_vsyncMissStreak = miss;
-        if (miss >= 4) {
+        if (miss >= 2) {
           s_vsyncHealthFail = true;
           s_vsyncMissStreak = 0;
         }
@@ -195,7 +264,15 @@ void runScheduledRecover(void) {
   resetTouchInput();
 
   if (hard) {
-    if (s_lastHardRecoverMs != 0 && (now - s_lastHardRecoverMs) < kHardRecoverCooldownMs) {
+    const bool forceRestart =
+        reason && (strcmp(reason, "vsync_miss") == 0 ||
+                   strcmp(reason, "vsync_silent") == 0 ||
+                   strcmp(reason, "ble_lite_off_hard") == 0 ||
+                   strcmp(reason, "unfreeze_hard") == 0 ||
+                   strcmp(reason, "wake_hard") == 0 ||
+                   strcmp(reason, "freeze_wd") == 0);
+    if (!forceRestart && s_lastHardRecoverMs != 0 &&
+        (now - s_lastHardRecoverMs) < kHardRecoverCooldownMs) {
       softRepaint();
     } else {
       doRgbRestart(reason);
@@ -220,6 +297,12 @@ void displayHealthWatchdog(void) {
   }
 
   if (s_frozen && s_frozenSinceMs != 0 && (now - s_frozenSinceMs) > 4000) {
+    // Během BLE scanu nehard-restartuj RGB — touch umře a heap je nízko
+    if (climateBleIsBusy()) {
+      s_frozen = false;
+      s_frozenSinceMs = 0;
+      return;
+    }
     ESP_LOGW("LVGL", "freeze watchdog — unfreeze after %lu ms",
              (unsigned long)(now - s_frozenSinceMs));
     s_frozen = false;
@@ -397,19 +480,26 @@ void uiLvglInit() {
 
 bool uiLvglInitDone() { return s_initDone; }
 
+void uiLvglRequestLite(bool on) {
+  bumpRef(s_liteRef, on);
+}
+
+void uiLvglRequestFreeze(bool on) {
+  bumpRef(s_freezeRef, on);
+}
+
+void uiLvglRequestRecover(bool hard) {
+  if (hard) {
+    s_reqHardRecover.store(1, std::memory_order_relaxed);
+  } else {
+    s_reqSoftRecover.store(1, std::memory_order_relaxed);
+  }
+}
+
 void uiLvglSetFrozen(bool frozen) {
-  if (s_frozen == frozen) {
-    return;
-  }
-  s_frozen = frozen;
-  s_frozenSinceMs = frozen ? millis() : 0;
-  uiLvglSetRgbLowBandwidth(frozen);
-  if (!frozen && s_wasFrozen) {
-    // Po Wi-Fi/MQTT/BLE špičce — soft + hard (posun FB vsync často nechytí)
-    uiLvglScheduleRecover("unfreeze", false, 80);
-    uiLvglScheduleRecover("unfreeze_hard", true, 420);
-  }
-  s_wasFrozen = frozen;
+  // UI thread: absolutní — vynuluj/nastav ref a hned aplikuj
+  s_freezeRef.store(frozen ? 1 : 0, std::memory_order_relaxed);
+  applyDisplayReqs();
 }
 
 bool uiLvglIsFrozen() { return s_frozen; }
@@ -483,7 +573,9 @@ void uiLvglScheduleRecover(const char* reason, bool hard, uint32_t delayMs) {
 }
 
 void uiLvglSetRgbLowBandwidth(bool low) {
-  s_displayLite = low;
+  // UI thread: absolutní lite ref
+  s_liteRef.store(low ? 1 : 0, std::memory_order_relaxed);
+  applyDisplayReqs();
 }
 
 int uiLvglHorRes() { return s_horRes; }
@@ -515,6 +607,7 @@ void uiLvglTick() {
   }
 
   displayHealthWatchdog();
+  applyDisplayReqs();
   runScheduledRecover();
 
   const uint32_t now = millis();
@@ -528,8 +621,8 @@ void uiLvglTick() {
 #if !LG_THERMA_SIMPLE_UI
   ui_tick();
   uiNetSyncWifi();
+  uiEezApplySignalLeds();
   if (!netWifiIsBusy() && !s_displayLite) {
-    uiEezApplySignalLeds();
     uiEezNtpLabelTick();
   }
 #endif

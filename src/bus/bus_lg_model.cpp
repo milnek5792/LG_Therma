@@ -1,5 +1,6 @@
 #include "bus_lg_model.h"
 #include "bus_lg_config.h"
+#include "storage_config_nvs.h"
 #include <cstring>
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -39,6 +40,27 @@ void lgModelInit() {
   soloRezimTab5 = true;
   mCilova = 0;
   novaCilovaTeplota = 0;
+}
+
+void lgModelRestoreSessionFromNvs() {
+  storageInit();
+  bool on = false;
+  uint8_t sp = 35;
+  if (!storageLoadTcSession(&on, &sp)) {
+    Serial.println("[BOOT] NVS session — neni ulozena");
+    return;
+  }
+  lgModelLock();
+  cilovaTeplotaTab5 = sp;
+  cilovyZapnutoTab5 = on;
+  drzetStavAktivni = true;
+  tcPozadavekZap = on;
+  if (sp >= 15 && sp <= 65) {
+    mCilova = sp;
+    novaCilovaTeplota = sp;
+  }
+  lgModelUnlock();
+  Serial.printf("[BOOT] NVS session %s T=%u\n", on ? "ON" : "OFF", (unsigned)sp);
 }
 
 void lgModelLock() {
@@ -88,4 +110,33 @@ bool lgMaCerstoA0(uint32_t maxAgeMs) {
     return false;
   }
   return (millis() - t) < maxAgeMs;
+}
+
+void lgModelReadUiSnap(LgModelUiSnap* out) {
+  if (!out) {
+    return;
+  }
+  memset(out, 0, sizeof(*out));
+  lgModelLock();
+  const unsigned long a0Ms = s_casPosledniA0Ms;
+  out->lin_live =
+      (a0Ms != 0) && ((millis() - a0Ms) < LG_A0_FRESH_MS);
+  if (a0SnapLen > 2) {
+    out->b2 = a0Snap[2];
+  }
+  if (a0SnapLen > 3) {
+    out->b3 = a0Snap[3];
+  }
+  if (a0SnapLen > 8) {
+    out->a0_sp = a0Snap[8];
+  }
+  out->m_vstupni = mVstupni;
+  out->m_vystupni = mVystupni;
+  out->m_cilova = mCilova;
+  out->nova_cilova = novaCilovaTeplota;
+  out->pozadavek_zapis = pozadavekNaZapis;
+  out->cilovy_zapnuto = cilovyZapnutoTab5;
+  out->cekame_orig = cekameNaOrigStart;
+  out->tc_pozadavek = tcPozadavekZap;
+  lgModelUnlock();
 }

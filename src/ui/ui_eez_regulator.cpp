@@ -5,8 +5,10 @@
 #include "ui_eez_actions.h"
 #include "ui_eez_fonts.h"
 #include "ui_eez_model.h"
+#include "ui_ui_lvgl.h"
 #include "app_cmd.h"
 
+#include <Arduino.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -114,6 +116,8 @@ void onSave(lv_event_t* e) {
   (void)e;
   climateRegulatorSave();
   s_dirty = false;
+  // Jen soft — hard RGB restart po NVS často rozhodí panel
+  uiLvglScheduleRecover("reg_save", false, 120);
 }
 
 void onEkvToggle(lv_event_t* e) {
@@ -138,27 +142,27 @@ void adjustFloat(float* v, float delta, float lo, float hi) {
 
 void onKpM(lv_event_t* e) {
   (void)e;
-  adjustFloat(&climateRegulatorGetConfigMutable()->kp, -0.5f, 0.0f, 40.0f);
+  adjustFloat(&climateRegulatorGetConfigMutable()->kp, -0.5f, 0.0f, 10.0f);
 }
 void onKpP(lv_event_t* e) {
   (void)e;
-  adjustFloat(&climateRegulatorGetConfigMutable()->kp, 0.5f, 0.0f, 40.0f);
+  adjustFloat(&climateRegulatorGetConfigMutable()->kp, 0.5f, 0.0f, 10.0f);
 }
 void onKiM(lv_event_t* e) {
   (void)e;
-  adjustFloat(&climateRegulatorGetConfigMutable()->ki, -0.05f, 0.0f, 5.0f);
+  adjustFloat(&climateRegulatorGetConfigMutable()->ki, -0.05f, 0.0f, 2.0f);
 }
 void onKiP(lv_event_t* e) {
   (void)e;
-  adjustFloat(&climateRegulatorGetConfigMutable()->ki, 0.05f, 0.0f, 5.0f);
+  adjustFloat(&climateRegulatorGetConfigMutable()->ki, 0.05f, 0.0f, 2.0f);
 }
 void onKdM(lv_event_t* e) {
   (void)e;
-  adjustFloat(&climateRegulatorGetConfigMutable()->kd, -0.5f, 0.0f, 20.0f);
+  adjustFloat(&climateRegulatorGetConfigMutable()->kd, -0.5f, 0.0f, 10.0f);
 }
 void onKdP(lv_event_t* e) {
   (void)e;
-  adjustFloat(&climateRegulatorGetConfigMutable()->kd, 0.5f, 0.0f, 20.0f);
+  adjustFloat(&climateRegulatorGetConfigMutable()->kd, 0.5f, 0.0f, 10.0f);
 }
 void onBiasM(lv_event_t* e) {
   (void)e;
@@ -190,7 +194,12 @@ void refreshChart() {
     return;
   }
   const int n = climateRegulatorHistoryCount();
-  lv_chart_set_point_count(regulatorObj.chart, REG_HISTORY_LEN);
+  // Point count jen při změně — set_point_count invaliduje celý chart
+  static int s_lastPointCount = -1;
+  if (s_lastPointCount != REG_HISTORY_LEN) {
+    lv_chart_set_point_count(regulatorObj.chart, REG_HISTORY_LEN);
+    s_lastPointCount = REG_HISTORY_LEN;
+  }
   for (int i = 0; i < REG_HISTORY_LEN; ++i) {
     if (i < n) {
       RegulatorHistoryPoint p{};
@@ -198,10 +207,10 @@ void refreshChart() {
       const int16_t room =
           (p.room_c <= UI_TEPLOTA_NEPLATNA + 100.0f) ? 0 : (int16_t)lroundf(p.room_c * 10.0f);
       const int16_t sp = (int16_t)lroundf(p.room_sp_c * 10.0f);
-      const int16_t u = (int16_t)lroundf(p.u_pct);
+      const int16_t tWater = (int16_t)lroundf(p.t_water_c * 10.0f);
       lv_chart_set_value_by_id(regulatorObj.chart, regulatorObj.ser_room, i, room);
       lv_chart_set_value_by_id(regulatorObj.chart, regulatorObj.ser_sp, i, sp);
-      lv_chart_set_value_by_id(regulatorObj.chart, regulatorObj.ser_u, i, u);
+      lv_chart_set_value_by_id(regulatorObj.chart, regulatorObj.ser_u, i, tWater);
     } else {
       lv_chart_set_value_by_id(regulatorObj.chart, regulatorObj.ser_room, i,
                                LV_CHART_POINT_NONE);
@@ -212,6 +221,17 @@ void refreshChart() {
     }
   }
   lv_obj_invalidate(regulatorObj.chart);
+}
+
+bool chartNeedsRefresh(void) {
+  static uint32_t s_lastGen = 0;
+  const uint32_t gen = climateRegulatorHistoryGen();
+  // Nový vzorek (i po naplnění ring bufferu) — ne periodický redraw
+  if (gen != s_lastGen) {
+    s_lastGen = gen;
+    return true;
+  }
+  return false;
 }
 
 }  // namespace
@@ -240,7 +260,7 @@ void uiRegulatorCreate(void) {
   regulatorObj.btn_mode =
       makeButton(scr, kW - kMargin - 140, 4, 140, kBtnH, "Auto", onModeToggle, kColGreen);
   regulatorObj.btn_ekv =
-      makeButton(scr, kW - kMargin - 290, 4, 130, kBtnH, "PID only", onEkvToggle, kColOrange);
+      makeButton(scr, kW - kMargin - 290, 4, 130, kBtnH, "EKV ON", onEkvToggle, kColAccent);
   regulatorObj.btn_save =
       makeButton(scr, kW - kMargin - 430, 4, 120, kBtnH, "Ulozit", onSave, kColAccent);
 
@@ -249,7 +269,7 @@ void uiRegulatorCreate(void) {
   const int chartH = 260;
   lv_obj_t* chartPanel = makePanel(scr, kMargin, topY, contentW, chartH);
 
-  makeLabel(chartPanel, kPad, 4, 400, "Graf: pokoj (zel) / SP (oranz) / u% (modra)",
+  makeLabel(chartPanel, kPad, 4, 400, "Graf: pokoj (zel) / SP (oranz) / SP vody (modra)",
             kColMuted);
 
   regulatorObj.chart = lv_chart_create(chartPanel);
@@ -258,7 +278,7 @@ void uiRegulatorCreate(void) {
   lv_chart_set_type(regulatorObj.chart, LV_CHART_TYPE_LINE);
   lv_chart_set_point_count(regulatorObj.chart, REG_HISTORY_LEN);
   lv_chart_set_range(regulatorObj.chart, LV_CHART_AXIS_PRIMARY_Y, 150, 250);  // 15.0–25.0 °C ×10
-  lv_chart_set_range(regulatorObj.chart, LV_CHART_AXIS_SECONDARY_Y, 0, 100);
+  lv_chart_set_range(regulatorObj.chart, LV_CHART_AXIS_SECONDARY_Y, 200, 450);  // 20–45 °C ×10
   lv_obj_set_style_bg_color(regulatorObj.chart, lv_color_hex(0x0E0E10u),
                             LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_border_width(regulatorObj.chart, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -289,43 +309,45 @@ void uiRegulatorCreate(void) {
   regulatorObj.lbl_pid =
       makeLabel(pidPanel, kPad, 26, colW - 2 * kPad, "Kp Ki Kd", kColText);
   regulatorObj.lbl_curve =
-      makeLabel(pidPanel, kPad, 70, colW - 2 * kPad, "krivka", kColMuted);
+      makeLabel(pidPanel, kPad, 70, colW - 2 * kPad, "ekviterm", kColMuted);
 
-  const int bw = 44;
-  const int bh = 30;
-  int by = bottomH - 2 * (bh + 4) - kPad;
-  int bx = kPad;
-  makeLabel(pidPanel, bx, by - 18, 80, "Kp", kColMuted);
-  regulatorObj.btn_kp_m = makeButton(pidPanel, bx, by, bw, bh, "-", onKpM, kColPurple);
-  regulatorObj.btn_kp_p =
-      makeButton(pidPanel, bx + bw + 4, by, bw, bh, "+", onKpP, kColPurple);
-  bx += 2 * (bw + 4) + 12;
-  makeLabel(pidPanel, bx, by - 18, 80, "Ki", kColMuted);
-  regulatorObj.btn_ki_m = makeButton(pidPanel, bx, by, bw, bh, "-", onKiM, kColPurple);
-  regulatorObj.btn_ki_p =
-      makeButton(pidPanel, bx + bw + 4, by, bw, bh, "+", onKiP, kColPurple);
-  bx += 2 * (bw + 4) + 12;
-  makeLabel(pidPanel, bx, by - 18, 80, "Kd", kColMuted);
-  regulatorObj.btn_kd_m = makeButton(pidPanel, bx, by, bw, bh, "-", onKdM, kColPurple);
-  regulatorObj.btn_kd_p =
-      makeButton(pidPanel, bx + bw + 4, by, bw, bh, "+", onKdP, kColPurple);
+  const int colInner = colW - 2 * kPad;
+  const int groupGap = 8;
+  const int groupW = (colInner - 2 * groupGap) / 3;
+  const int bw = (groupW - 8) / 2;
+  const int bh = 44;
+  const int btnGap = 8;
+  const int lblAbove = 18;
+  const int rowGap = 14;  // mezera: spodek horních tlačítek → popisek spodní řady
 
-  by += bh + 8;
-  bx = kPad;
-  makeLabel(pidPanel, bx, by - 18, 80, "bias", kColMuted);
-  regulatorObj.btn_bias_m = makeButton(pidPanel, bx, by, bw, bh, "-", onBiasM, kColPurple);
-  regulatorObj.btn_bias_p =
-      makeButton(pidPanel, bx + bw + 4, by, bw, bh, "+", onBiasP, kColPurple);
-  bx += 2 * (bw + 4) + 12;
-  makeLabel(pidPanel, bx, by - 18, 100, "Tcold", kColMuted);
-  regulatorObj.btn_cold_m = makeButton(pidPanel, bx, by, bw, bh, "-", onColdM, kColPurple);
-  regulatorObj.btn_cold_p =
-      makeButton(pidPanel, bx + bw + 4, by, bw, bh, "+", onColdP, kColPurple);
-  bx += 2 * (bw + 4) + 12;
-  makeLabel(pidPanel, bx, by - 18, 100, "Twarm", kColMuted);
-  regulatorObj.btn_warm_m = makeButton(pidPanel, bx, by, bw, bh, "-", onWarmM, kColPurple);
-  regulatorObj.btn_warm_p =
-      makeButton(pidPanel, bx + bw + 4, by, bw, bh, "+", onWarmP, kColPurple);
+  const int byBottom = bottomH - kPad - bh;
+  const int byTop = byBottom - lblAbove - rowGap - bh;
+
+  auto placeParamRow = [&](int by, const char* n0, lv_event_cb_t m0, lv_event_cb_t p0,
+                           const char* n1, lv_event_cb_t m1, lv_event_cb_t p1,
+                           const char* n2, lv_event_cb_t m2, lv_event_cb_t p2,
+                           lv_obj_t** out_m0, lv_obj_t** out_p0, lv_obj_t** out_m1,
+                           lv_obj_t** out_p1, lv_obj_t** out_m2, lv_obj_t** out_p2) {
+    for (int i = 0; i < 3; ++i) {
+      const int gx = kPad + i * (groupW + groupGap);
+      const char* name = (i == 0) ? n0 : (i == 1) ? n1 : n2;
+      lv_event_cb_t cbm = (i == 0) ? m0 : (i == 1) ? m1 : m2;
+      lv_event_cb_t cbp = (i == 0) ? p0 : (i == 1) ? p1 : p2;
+      lv_obj_t** om = (i == 0) ? out_m0 : (i == 1) ? out_m1 : out_m2;
+      lv_obj_t** op = (i == 0) ? out_p0 : (i == 1) ? out_p1 : out_p2;
+      makeLabel(pidPanel, gx, by - lblAbove, groupW, name, kColMuted);
+      *om = makeButton(pidPanel, gx, by, bw, bh, "-", cbm, kColPurple);
+      *op = makeButton(pidPanel, gx + bw + btnGap, by, bw, bh, "+", cbp, kColPurple);
+    }
+  };
+
+  placeParamRow(byTop, "Kp", onKpM, onKpP, "Ki", onKiM, onKiP, "Kd", onKdM, onKdP,
+                &regulatorObj.btn_kp_m, &regulatorObj.btn_kp_p, &regulatorObj.btn_ki_m,
+                &regulatorObj.btn_ki_p, &regulatorObj.btn_kd_m, &regulatorObj.btn_kd_p);
+  placeParamRow(byBottom, "offset", onBiasM, onBiasP, "Tcold", onColdM, onColdP, "Twarm",
+                onWarmM, onWarmP, &regulatorObj.btn_bias_m, &regulatorObj.btn_bias_p,
+                &regulatorObj.btn_cold_m, &regulatorObj.btn_cold_p,
+                &regulatorObj.btn_warm_m, &regulatorObj.btn_warm_p);
 
   s_created = true;
   uiRegulatorTick();
@@ -338,6 +360,10 @@ void uiRegulatorEnsureCreated(void) {
 }
 
 void uiRegulatorOnLeave(void) {
+  // NVS až po přepnutí obrazovky (uiRegulatorFlushSave) — stejně jako plán
+}
+
+void uiRegulatorFlushSave(void) {
   if (s_dirty) {
     climateRegulatorSave();
     s_dirty = false;
@@ -353,57 +379,96 @@ void uiRegulatorTick(void) {
     return;
   }
 
+  // Stav max 1 Hz; parametry hned. Graf jen při nové historii.
+  static uint32_t s_lastStatusMs = 0;
+  static float s_lastKp = -1.0f;
+  static float s_lastKi = -1.0f;
+  static float s_lastKd = -1.0f;
+  static bool s_lastDirty = false;
+  const uint32_t now = millis();
+  const RegulatorConfig* cfg = climateRegulatorGetConfig();
+  const bool paramsChanged = (cfg->kp != s_lastKp) || (cfg->ki != s_lastKi) ||
+                             (cfg->kd != s_lastKd) || (s_dirty != s_lastDirty);
+  if (!paramsChanged && s_lastStatusMs != 0 && (now - s_lastStatusMs) < 1000u) {
+    if (chartNeedsRefresh()) {
+      refreshChart();
+    }
+    return;
+  }
+  s_lastStatusMs = now;
+  s_lastKp = cfg->kp;
+  s_lastKi = cfg->ki;
+  s_lastKd = cfg->kd;
+  s_lastDirty = s_dirty;
+
   RegulatorSnapshot snap{};
   climateRegulatorGetSnapshot(&snap);
-  const RegulatorConfig* cfg = climateRegulatorGetConfig();
 
   lv_obj_t* modeLbl = lv_obj_get_child(regulatorObj.btn_mode, 0);
   if (modeLbl) {
     setLabelIfChanged(modeLbl, snap.active ? "Auto ON" : "Vystupni T");
   }
-  lv_obj_set_style_bg_color(
-      regulatorObj.btn_mode,
-      lv_color_hex(snap.active ? kColGreen : 0x48484Au),
-      LV_PART_MAIN | LV_STATE_DEFAULT);
+  static bool s_lastActive = false;
+  static bool s_haveActive = false;
+  if (!s_haveActive || s_lastActive != snap.active) {
+    s_haveActive = true;
+    s_lastActive = snap.active;
+    lv_obj_set_style_bg_color(
+        regulatorObj.btn_mode,
+        lv_color_hex(snap.active ? kColGreen : 0x48484Au),
+        LV_PART_MAIN | LV_STATE_DEFAULT);
+  }
 
   lv_obj_t* ekvLbl = lv_obj_get_child(regulatorObj.btn_ekv, 0);
   if (ekvLbl) {
-    setLabelIfChanged(ekvLbl, snap.use_equitherm ? "Ekv+PID" : "PID only");
+    setLabelIfChanged(ekvLbl, snap.use_equitherm ? "EKV ON" : "fix 32.5");
   }
-  lv_obj_set_style_bg_color(
-      regulatorObj.btn_ekv,
-      lv_color_hex(snap.use_equitherm ? kColPurple : kColOrange),
-      LV_PART_MAIN | LV_STATE_DEFAULT);
+  static bool s_lastEkv = false;
+  static bool s_haveEkv = false;
+  if (!s_haveEkv || s_lastEkv != snap.use_equitherm) {
+    s_haveEkv = true;
+    s_lastEkv = snap.use_equitherm;
+    lv_obj_set_style_bg_color(
+        regulatorObj.btn_ekv,
+        lv_color_hex(snap.use_equitherm ? kColAccent : 0x48484Au),
+        LV_PART_MAIN | LV_STATE_DEFAULT);
+  }
 
-  char line[220];
+  const float roomUi = uiEez.teplota_vnitrni;
+  const bool roomUiOk = roomUi > (UI_TEPLOTA_NEPLATNA + 100.0f);
+  const float roomSp = snap.room_sp_c;
+  const float errLive = roomUiOk ? (roomSp - roomUi) : snap.error_c;
+  const float outUi = uiEez.teplota_venkovni;
+  const bool outUiOk = outUi > (UI_TEPLOTA_NEPLATNA + 100.0f);
+
+  const char* modeTxt = "Vystupni T (pauza)";
+  if (snap.active) {
+    modeTxt = snap.eco_mode ? "Auto — Eco (kompresor off)" : "Auto — bezna regulace";
+  }
+
+  char line[260];
   snprintf(line, sizeof(line),
            "%s\n"
-           "u %.0f%% = base %.0f + trim %.0f\n"
-           "T vody %u C   e %.2f C\n"
-           "pokoj %.1f / SP %.1f\n"
-           "venku %.1f   BLE room %s out %s%s",
-           snap.use_equitherm ? "rezim: ekviterm+PID" : "rezim: PID only (bez venku)",
-           (double)snap.u_pct, (double)snap.u_base_pct, (double)snap.u_trim_pct,
-           (unsigned)snap.t_water_c, (double)snap.error_c,
-           snap.room_ok ? (double)snap.room_c : -999.0, (double)snap.room_sp_c,
-           snap.outdoor_ok ? (double)snap.outdoor_c : -999.0,
-           snap.room_ok ? "OK" : "OFF", snap.outdoor_ok ? "OK" : "OFF",
-           s_dirty ? " *" : "");
+           "zaklad %.1f + kor %.1f = %.1f  LIN %u C\n"
+           "P %.1f  I %.1f C   e %.2f C\n"
+           "pokoj %.1f / SP %.1f   venku %.1f\n"
+           "BLE %s%s",
+           modeTxt, (double)snap.eq_base_c, (double)snap.pid_corr_c,
+           (double)snap.t_water_sp_c, (unsigned)snap.t_water_c,
+           (double)snap.p_term_c, (double)snap.i_term_c, (double)errLive,
+           roomUiOk ? (double)roomUi : -999.0, (double)roomSp,
+           outUiOk ? (double)outUi : -999.0,
+           roomUiOk ? "OK" : "OFF", s_dirty ? " *" : "");
   setLabelIfChanged(regulatorObj.lbl_live, line);
 
-  snprintf(line, sizeof(line), "Kp %.1f  Ki %.2f  Kd %.1f  bias %.1f%%",
-           (double)cfg->kp, (double)cfg->ki, (double)cfg->kd, (double)cfg->bias_pct);
+  snprintf(line, sizeof(line), "Kp %.1f  Ki %.2f  Kd %.1f  (korekce °C)",
+           (double)cfg->kp, (double)cfg->ki, (double)cfg->kd);
   setLabelIfChanged(regulatorObj.lbl_pid, line);
 
-  if (snap.use_equitherm) {
-    snprintf(line, sizeof(line),
-             "krivka: %.0f C -> %.0f%%   %.0f C -> %.0f%%",
-             (double)cfg->t_out_cold_c, (double)cfg->u_cold_pct,
-             (double)cfg->t_out_warm_c, (double)cfg->u_warm_pct);
-  } else {
-    snprintf(line, sizeof(line), "krivka vypnuta — base 50%%, trim ±50%%");
-  }
+  snprintf(line, sizeof(line), "ekv: 35.73-0.515*Tout  kor -5..+3  Eco +0.3");
   setLabelIfChanged(regulatorObj.lbl_curve, line);
 
-  refreshChart();
+  if (chartNeedsRefresh()) {
+    refreshChart();
+  }
 }
