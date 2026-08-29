@@ -65,7 +65,7 @@ static void lgObsluhaPozadavekNaZapis() {
   // +/- během START/PRESTART: pošli C0 33, START frontu nesahej
   if (!zmenaStartu && lgZapisAktivni() && lgZapis.jeStartSekvence) {
     const uint8_t teplota = novaCilovaTeplota;
-    const bool zap = cilovyZapnutoTab5 || stavZapnuto;
+    const bool zap = cilovyZapnutoTab5 || tcPozadavekZap || cekameNaOrigStart;
     pozadavekNaZapis = false;
     pozadavekZmenaStartu = false;
     s_spReqMs = 0;
@@ -125,14 +125,17 @@ static void lgObsluhaPozadavekNaZapis() {
     }
   }
 
-  const bool zapProZapis = zmenaStartu
-                               ? cilovyZapnutoTab5
-                               : (cilovyZapnutoTab5 || stavZapnuto);
+  const bool sessionZap =
+      cilovyZapnutoTab5 || tcPozadavekZap || cekameNaOrigStart;
+  const bool zapProZapis = zmenaStartu ? cilovyZapnutoTab5 : sessionZap;
   const uint8_t teplota = novaCilovaTeplota;
   pozadavekNaZapis = false;
   pozadavekZmenaStartu = false;
   s_spReqMs = 0;
   s_a0SinceSpReq = false;
+  if (zmenaStartu && zapProZapis) {
+    lgZapisPovolenStart = true;
+  }
   lgModelUnlock();
 
   if (lgZapisAktivni()) {

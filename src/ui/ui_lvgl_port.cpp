@@ -619,8 +619,8 @@ void uiLvglTick() {
   lv_timer_handler();
 
 #if !LG_THERMA_SIMPLE_UI
-  ui_tick();
   uiNetSyncWifi();
+  ui_tick();
   uiEezApplySignalLeds();
   if (!netWifiIsBusy() && !s_displayLite) {
     uiEezNtpLabelTick();

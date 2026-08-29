@@ -33,6 +33,7 @@
 #define MQTT_TOPIC_TELE_TEMP_INLET   MQTT_BASE "/tele/temp_inlet"
 #define MQTT_TOPIC_TELE_TEMP_OUTLET  MQTT_BASE "/tele/temp_outlet"
 #define MQTT_TOPIC_TELE_TEMP_SET     MQTT_BASE "/tele/temp_set"
+#define MQTT_TOPIC_TELE_REG_MODE     MQTT_BASE "/tele/reg_mode"
 #define MQTT_TOPIC_TELE_POWER        MQTT_BASE "/tele/power"
 #define MQTT_TOPIC_TELE_PUMP         MQTT_BASE "/tele/pump"
 #define MQTT_TOPIC_TELE_COMPRESSOR   MQTT_BASE "/tele/compressor"
@@ -78,7 +79,7 @@
 
 /** Jak často kontrolovat změny tele (ms) — menší = svižnější panel. */
 #ifndef MQTT_TELE_CHANGE_MS
-#define MQTT_TELE_CHANGE_MS 200
+#define MQTT_TELE_CHANGE_MS 100
 #endif
 
 /** Neplatná teplota v tele/* (místo "off" — IoT Panel / UI). */

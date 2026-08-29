@@ -14,6 +14,7 @@
 #include "ui_bus_bindings.h"
 #include "ui_eez_model.h"
 #include "ui_ui_lvgl.h"
+#include "app_cmd.h"
 
 #include <Arduino.h>
 #include <esp_log.h>
@@ -25,6 +26,7 @@
 #include <string.h>
 #include <strings.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 #include <stdlib.h>
 #include <math.h>
@@ -159,12 +161,35 @@ float linTempOrNa(uint8_t raw, bool maA0) {
   return (float)raw;
 }
 
+/** temp_set: Auto = pokojový SP (0,5 °C); ruční = cíl vody z LIN session. */
+void snapMqttSetpoint(float* setp) {
+  if (!setp) {
+    return;
+  }
+  if (uiEez.rezim == UI_REZIM_AUTO) {
+    const float roomSp = climateRegulatorRoomSpEffective();
+    if (roomSp >= 16.0f && roomSp <= 24.0f) {
+      *setp = roomSp;
+    } else {
+      *setp = UI_TEPLOTA_NEPLATNA;
+    }
+    return;
+  }
+  lgModelLock();
+  const uint8_t cil = pozadavekNaZapis ? novaCilovaTeplota : mCilova;
+  lgModelUnlock();
+  if (cil >= 15 && cil <= 65) {
+    *setp = (float)cil;
+  } else {
+    *setp = UI_TEPLOTA_NEPLATNA;
+  }
+}
+
 void snapLinTemps(float* inlet, float* outlet, float* outdoor, float* setp) {
   lgModelLock();
   const bool maA0 = lgMaCerstoA0();
   const uint8_t in = mVstupni;
   const uint8_t out = mVystupni;
-  const uint8_t cil = pozadavekNaZapis ? novaCilovaTeplota : mCilova;
   lgModelUnlock();
 
   if (inlet) {
@@ -178,12 +203,35 @@ void snapLinTemps(float* inlet, float* outlet, float* outdoor, float* setp) {
     *outdoor = uiEez.teplota_venkovni;
   }
   if (setp) {
-    if (cil >= 15 && cil <= 65) {
-      *setp = (float)cil;
-    } else {
-      *setp = UI_TEPLOTA_NEPLATNA;
-    }
+    snapMqttSetpoint(setp);
   }
+}
+
+/** Binární tele ze stejného modelu jako uiEezSyncFromBus (bez stale uiEez). */
+struct TeleModelSnap {
+  int8_t lin;
+  int8_t power;
+  int8_t pump;
+  int8_t comp;
+};
+
+bool snapCompressorOn(uint8_t* b2Out, uint8_t* b3Out);
+
+void snapTeleFromModel(TeleModelSnap* out) {
+  if (!out) {
+    return;
+  }
+  LgModelUiSnap bus{};
+  lgModelReadUiSnap(&bus);
+  const bool linLive = bus.lin_live;
+  const uint8_t b2 = bus.b2;
+  out->lin = linLive ? 1 : 0;
+  out->power =
+      (bus.cilovy_zapnuto || bus.cekame_orig || bus.tc_pozadavek) ? 1 : 0;
+  out->pump = (linLive && lgJeCerpadloZap(b2)) ? 1 : 0;
+  uint8_t b2c = 0;
+  uint8_t b3c = 0;
+  out->comp = snapCompressorOn(&b2c, &b3c) ? 1 : 0;
 }
 
 // Connect sync (stagger) + pak jen při změně. Žádný minutový cyklus.
@@ -202,6 +250,7 @@ struct TeleSnap {
   int8_t compressor = -1;
   int8_t lin = -1;  // A0 čerstvé = Tc připojeno na LIN
   int8_t alarm = -1;
+  int8_t regMode = -1;  // 0=water, 1=room
 };
 
 TeleSnap s_pub{};
@@ -234,6 +283,7 @@ void publishTeleOfflineMarkers() {
   mqttPublishRetain(MQTT_TOPIC_TELE_TEMP_OUTDOOR, MQTT_TELE_NA);
   mqttPublishRetain(MQTT_TOPIC_TELE_TEMP_ROOM, MQTT_TELE_NA);
   mqttPublishRetain(MQTT_TOPIC_TELE_TEMP_SET, MQTT_TELE_NA);
+  mqttPublishRetain(MQTT_TOPIC_TELE_REG_MODE, MQTT_TELE_NA);
   const int8_t keepComp = s_pub.compressor;
   s_pub = TeleSnap{};
   s_pub.lin = 0;
@@ -323,10 +373,10 @@ void publishOutlet(float v) {
   }
 }
 
-/** Setpoint: vždy číslo (%.1f) pro slider; bez hodnoty nech retain. */
+/** temp_set: Auto pokoj (%.1f, 0,5 °C) / ruční voda (celé °C z LIN). */
 void publishSetpoint() {
   float setp = UI_TEPLOTA_NEPLATNA;
-  snapLinTemps(nullptr, nullptr, nullptr, &setp);
+  snapMqttSetpoint(&setp);
   if (!tempOffline(setp)) {
     publishFloat(MQTT_TOPIC_TELE_TEMP_SET, setp);
     s_pub.setp = setp;
@@ -335,6 +385,21 @@ void publishSetpoint() {
     s_pub.setp = UI_TEPLOTA_NEPLATNA;
     ESP_LOGI(TAG, "temp_set skip (neni platna cilova)");
   }
+}
+
+int8_t mqttRegModeCode(void) {
+  return (uiEez.rezim == UI_REZIM_AUTO) ? 1 : 0;
+}
+
+const char* mqttRegModePayload(void) {
+  return (uiEez.rezim == UI_REZIM_AUTO) ? "room" : "water";
+}
+
+void publishRegMode(void) {
+  const char* v = mqttRegModePayload();
+  publishStr(MQTT_TOPIC_TELE_REG_MODE, v);
+  s_pub.regMode = mqttRegModeCode();
+  ESP_LOGI(TAG, "retain %s = %s", MQTT_TOPIC_TELE_REG_MODE, v);
 }
 
 bool snapCompressorOn(uint8_t* b2Out = nullptr, uint8_t* b3Out = nullptr) {
@@ -390,22 +455,28 @@ void publishTeleOne(int idx) {
   switch (idx) {
     // Binární první — compressor nesmí spadnout na konec fronty
     case 0: {
-      const bool linOk = lgMaCerstoA0();
-      publishStr(MQTT_TOPIC_TELE_LIN, linOk ? "ON" : "OFF");
-      s_pub.lin = linOk ? 1 : 0;
-      ESP_LOGI(TAG, "retain %s = %s", MQTT_TOPIC_TELE_LIN, linOk ? "ON" : "OFF");
+      TeleModelSnap t{};
+      snapTeleFromModel(&t);
+      publishStr(MQTT_TOPIC_TELE_LIN, t.lin ? "ON" : "OFF");
+      s_pub.lin = t.lin;
+      ESP_LOGI(TAG, "retain %s = %s", MQTT_TOPIC_TELE_LIN, t.lin ? "ON" : "OFF");
       break;
     }
-    case 1:
-      publishStr(MQTT_TOPIC_TELE_POWER, uiEez.sig_chod ? "ON" : "OFF");
-      s_pub.power = uiEez.sig_chod ? 1 : 0;
+    case 1: {
+      TeleModelSnap t{};
+      snapTeleFromModel(&t);
+      publishStr(MQTT_TOPIC_TELE_POWER, t.power ? "ON" : "OFF");
+      s_pub.power = t.power;
       break;
-    case 2:
-      publishStr(MQTT_TOPIC_TELE_PUMP, uiEez.sig_cerpadlo ? "ON" : "OFF");
-      s_pub.pump = uiEez.sig_cerpadlo ? 1 : 0;
-      ESP_LOGI(TAG, "retain %s = %s", MQTT_TOPIC_TELE_PUMP,
-               uiEez.sig_cerpadlo ? "ON" : "OFF");
+    }
+    case 2: {
+      TeleModelSnap t{};
+      snapTeleFromModel(&t);
+      publishStr(MQTT_TOPIC_TELE_PUMP, t.pump ? "ON" : "OFF");
+      s_pub.pump = t.pump;
+      ESP_LOGI(TAG, "retain %s = %s", MQTT_TOPIC_TELE_PUMP, t.pump ? "ON" : "OFF");
       break;
+    }
     case 3: {
       uint8_t b2 = 0, b3 = 0;
       const bool on = snapCompressorOn(&b2, &b3);
@@ -446,12 +517,15 @@ void publishTeleOne(int idx) {
       publishStr(MQTT_TOPIC_TELE_ALARM, uiEez.sig_alarm ? "ON" : "OFF");
       s_pub.alarm = uiEez.sig_alarm ? 1 : 0;
       break;
+    case 10:
+      publishRegMode();
+      break;
     default:
       break;
   }
 }
 
-static const int kTeleSyncCount = 10;
+static const int kTeleSyncCount = 11;
 void teleTick() {
   if (!s_connected || s_teleIdx < 0) {
     return;
@@ -497,13 +571,13 @@ void telePublishChanges() {
   s_lastChangeCheckMs = now;
 
   // LIN live jen při aktivním watch (jinak už je OFF z watchOff)
-  uint8_t b2 = 0, b3 = 0;
-  const int8_t lin = lgMaCerstoA0() ? 1 : 0;
-  const int8_t pow = uiEez.sig_chod ? 1 : 0;
-  const int8_t pump = uiEez.sig_cerpadlo ? 1 : 0;
-  const int8_t comp = snapCompressorOn(&b2, &b3) ? 1 : 0;
+  TeleModelSnap t{};
+  snapTeleFromModel(&t);
+  const int8_t lin = t.lin;
+  const int8_t pow = t.power;
+  const int8_t pump = t.pump;
+  const int8_t comp = t.comp;
   const int8_t al = uiEez.sig_alarm ? 1 : 0;
-  bool binChanged = false;
 
   // Stejně jako pump: při změně + lehký refresh compressor každých 3 s
   const bool compRefresh = (now - s_compLastPubMs) >= 3000;
@@ -513,30 +587,22 @@ void telePublishChanges() {
     if (lin != s_pub.lin) {
       publishStr(MQTT_TOPIC_TELE_LIN, lin ? "ON" : "OFF");
       s_pub.lin = lin;
-      binChanged = true;
     }
     if (pow != s_pub.power) {
       publishStr(MQTT_TOPIC_TELE_POWER, pow ? "ON" : "OFF");
       s_pub.power = pow;
-      binChanged = true;
     }
     if (pump != s_pub.pump) {
       publishStr(MQTT_TOPIC_TELE_PUMP, pump ? "ON" : "OFF");
       s_pub.pump = pump;
       ESP_LOGI(TAG, "retain %s = %s", MQTT_TOPIC_TELE_PUMP, pump ? "ON" : "OFF");
-      binChanged = true;
     }
     if (comp != s_pub.compressor || compRefresh) {
       publishCompressor(comp != 0);
-      binChanged = true;
     }
     if (al != s_pub.alarm) {
       publishStr(MQTT_TOPIC_TELE_ALARM, al ? "ON" : "OFF");
       s_pub.alarm = al;
-      binChanged = true;
-    }
-    if (binChanged) {
-      return;
     }
   }
 
@@ -545,6 +611,13 @@ void telePublishChanges() {
   float outdoor = UI_TEPLOTA_NEPLATNA;
   float setp = UI_TEPLOTA_NEPLATNA;
   snapLinTemps(&inlet, &outlet, &outdoor, &setp);
+
+  const int8_t rm = mqttRegModeCode();
+  if (rm != s_pub.regMode) {
+    publishRegMode();
+    publishSetpoint();
+    return;
+  }
 
   // Teploty: max 1 změna / tick (retain jen platná čísla)
   if (!tempOffline(outlet) && !nearlyEq(outlet, s_pub.outlet)) {
@@ -651,47 +724,80 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
   if (topicIs(topic, strlen(topic), MQTT_TOPIC_CMD_SETPOINT)) {
     // Absolutní / relativní — fronta na loop (LIN na core 1)
+    const bool autoMode = (uiEez.rezim == UI_REZIM_AUTO);
     if (strcasecmp(msg, "up") == 0 || strcmp(msg, "+") == 0) {
-      ESP_LOGI(TAG, "cmd/setpoint +1 (queue)");
-      uiBusQueueAdjustSetpoint(1);
+      if (autoMode) {
+        ESP_LOGI(TAG, "cmd/setpoint +0.5 (queue)");
+        uiBusQueueAdjustSetpoint(5);
+      } else {
+        ESP_LOGI(TAG, "cmd/setpoint +1 (queue)");
+        uiBusQueueAdjustSetpoint(1);
+      }
       return;
     }
     if (strcasecmp(msg, "down") == 0 || strcmp(msg, "-") == 0) {
-      ESP_LOGI(TAG, "cmd/setpoint -1 (queue)");
-      uiBusQueueAdjustSetpoint(-1);
+      if (autoMode) {
+        ESP_LOGI(TAG, "cmd/setpoint -0.5 (queue)");
+        uiBusQueueAdjustSetpoint(-5);
+      } else {
+        ESP_LOGI(TAG, "cmd/setpoint -1 (queue)");
+        uiBusQueueAdjustSetpoint(-1);
+      }
       return;
     }
     if ((msg[0] == '+' || msg[0] == '-') && msg[1] != '\0') {
-      const int d = atoi(msg);
-      if (d != 0 && d >= -10 && d <= 10) {
-        ESP_LOGI(TAG, "cmd/setpoint %+d (queue)", d);
-        uiBusQueueAdjustSetpoint(d);
+      char* end = nullptr;
+      const float df = strtof(msg, &end);
+      if (end != msg && *end == '\0' && df != 0.0f) {
+        if (autoMode) {
+          const int tenths = (int)lroundf(df * 10.0f);
+          if (tenths != 0 && tenths >= -100 && tenths <= 100) {
+            ESP_LOGI(TAG, "cmd/setpoint %+.1f (queue)", (double)df);
+            uiBusQueueAdjustSetpoint(tenths);
+          }
+        } else {
+          const int d = (int)lroundf(df);
+          if (d != 0 && d >= -10 && d <= 10) {
+            ESP_LOGI(TAG, "cmd/setpoint %+d (queue)", d);
+            uiBusQueueAdjustSetpoint(d);
+          }
+        }
         return;
       }
     }
-    const int sp = (int)(atof(msg) + 0.5f);
-    if (uiEez.rezim == UI_REZIM_AUTO) {
+    const float spf = (float)atof(msg);
+    if (autoMode) {
       // Varianta A: mobil v Auto mění jen pokojový SP (ne vodu)
-      if (sp >= 18 && sp <= 24) {
-        ESP_LOGI(TAG, "cmd/setpoint room %d (queue)", sp);
+      if (spf >= 18.0f && spf <= 24.0f) {
+        ESP_LOGI(TAG, "cmd/setpoint room %.1f (queue)", (double)spf);
+        appCmdEnqueueSetpointAbs((int)lroundf(spf * 10.0f), UI_SP_SRC_MQTT);
+      } else {
+        ESP_LOGW(TAG, "cmd/setpoint %.1f v Auto ignorovan (jen pokoj 18–24)",
+                 (double)spf);
+      }
+    } else {
+      const int sp = (int)(spf + 0.5f);
+      if (sp >= REG_T_WATER_MIN_C && sp <= REG_T_WATER_MAX_C) {
+        ESP_LOGI(TAG, "cmd/setpoint abs %d (queue)", sp);
         uiBusQueueSetpointC((uint8_t)sp);
       } else {
-        ESP_LOGW(TAG, "cmd/setpoint %d v Auto ignorovan (jen pokoj 18–24)", sp);
+        ESP_LOGW(TAG, "cmd/setpoint %d mimo rozsah vody %d–%d", sp,
+                 REG_T_WATER_MIN_C, REG_T_WATER_MAX_C);
       }
-    } else if (sp >= REG_T_WATER_MIN_C && sp <= REG_T_WATER_MAX_C) {
-      ESP_LOGI(TAG, "cmd/setpoint abs %d (queue)", sp);
-      uiBusQueueSetpointC((uint8_t)sp);
-    } else {
-      ESP_LOGW(TAG, "cmd/setpoint %d mimo rozsah vody %d–%d", sp,
-               REG_T_WATER_MIN_C, REG_T_WATER_MAX_C);
     }
     return;
   }
   if (topicIs(topic, strlen(topic), MQTT_TOPIC_CMD_MODE)) {
-    if (strcasecmp(msg, "auto") == 0) {
-      uiBusSetRegulationAuto(true);
+    if (strcasecmp(msg, "room") == 0 || strcasecmp(msg, "auto") == 0) {
+      uiBusQueueSetRegulationAuto(true);
+      ESP_LOGI(TAG, "cmd/mode room (queue)");
+    } else if (strcasecmp(msg, "water") == 0 ||
+               strcasecmp(msg, "manual") == 0 ||
+               strcasecmp(msg, "vystupni") == 0) {
+      uiBusQueueSetRegulationAuto(false);
+      ESP_LOGI(TAG, "cmd/mode water (queue)");
     } else {
-      uiBusSetRegulationAuto(false);
+      ESP_LOGW(TAG, "cmd/mode neznamy [%s] — room|water", msg);
     }
     return;
   }
@@ -1065,7 +1171,9 @@ void netMqttTick() {
   if (s_connected) {
     // mqtt.loop méně často — TLS keepalive žere PSRAM bandwidth (RGB underrun)
     static uint32_t s_lastMqttLoopMs = 0;
-    if (s_teleIdx < 0 && (now - s_lastMqttLoopMs) >= 500) {
+    const uint32_t loopIntervalMs =
+        (s_teleIdx < 0 && teleAllowed()) ? 200U : 500U;
+    if (s_teleIdx < 0 && (now - s_lastMqttLoopMs) >= loopIntervalMs) {
       s_lastMqttLoopMs = now;
       const uint32_t tLoop0 = millis();
       s_mqtt.loop();

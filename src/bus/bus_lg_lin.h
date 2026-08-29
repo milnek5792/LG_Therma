@@ -552,6 +552,12 @@ void lgZapisSpust(uint8_t teplota, bool zapnuto, bool zmenaStartu) {
   }
 #endif
 
+  if (zmenaStartu && zapnuto && !lgZapisPovolenStart && !cekameNaOrigStart) {
+    Serial.println("[ZAPIS BLOKOVAN] START jen po tlacitku START (HMI/MQTT/plan)");
+    return;
+  }
+  lgZapisPovolenStart = false;
+
   if (zmenaStartu && zapnuto && !soloRezimTab5) {
     cekameNaOrigStart = true;
     origPoslalStartPripravu = false;
@@ -680,48 +686,12 @@ void lgReagujNaOrigC0(uint8_t *data, uint8_t delka) {
 }
 
 /**
- * Po FW restartu: NVS už může session obnovit hned.
- * A0 průběžně — topný cyklus, nebo čerpadlo při známkách topení → session ON (bez C0).
- * Čisté protocení bez teplot/SP session nezapíná.
+ * Dříve: auto-adopt session z A0 (topení / oběhové čerpadlo).
+ * Session smí být ON jen po START (HMI, MQTT, plán) — ne z rána protocení vody.
  */
 inline void lgAdoptujSessionZA0(uint8_t *data, uint8_t delka) {
-  if (delka < 4 || data[0] != 0xA0) {
-    return;
-  }
-  if (cekameNaOrigStart || lgZapisAktivni() || pozadavekNaZapis) {
-    return;
-  }
-  if (drzetStavAktivni && cilovyZapnutoTab5) {
-    return;
-  }
-
-  const uint8_t b2 = data[2];
-  const uint8_t b3 = data[3];
-  const uint8_t sp = (delka > 8) ? data[8] : 0;
-  const uint8_t tin = (delka > 11) ? data[11] : mVstupni;
-  const uint8_t tout = (delka > 12) ? data[12] : mVystupni;
-
-  const bool topi = lgJeTcProvoz(b2, b3);
-  // Pumpa + platné SP + teplá voda → typicky cyklus po SP, ne studené protocení
-  const bool cerpadloVProvozu =
-      lgJeCerpadloZap(b2) && (sp >= 15 && sp <= 65) &&
-      ((tin >= 20) || (tout >= 20));
-
-  if (!topi && !cerpadloVProvozu) {
-    return;
-  }
-
-  const uint8_t t =
-      (sp >= 15 && sp <= 65) ? sp
-                            : ((mCilova >= 15 && mCilova <= 65) ? mCilova : 35);
-  lgNastavDrzenyStav(t, true);
-  tcPozadavekZap = true;
-  if (!pozadavekNaZapis) {
-    mCilova = t;
-  }
-  Serial.printf("[BOOT] Session ON z A0 T=%u B2=%02X B3=%02X (%s)%s\n", t, b2,
-                b3, lgPopisTcB3(b3),
-                (!topi && cerpadloVProvozu) ? " cerpadlo" : "");
+  (void)data;
+  (void)delka;
 }
 
 void lgZkontrolujObnovuStavu(uint8_t *data, uint8_t delka) {
@@ -746,8 +716,8 @@ void lgZkontrolujObnovuStavu(uint8_t *data, uint8_t delka) {
         lgDokoncStartOdOrig("orig. PRESTART cerpadlo");
       }
     }
-    if (lgJeTcProvoz(data[2], data[3]) && !cekameNaOrigStart) {
-      // Jen topný cyklus / B3=0x08 — ne samotné protocení čerpadla
+    if (lgJeTcProvoz(data[2], data[3]) && !cekameNaOrigStart && cilovyZapnutoTab5) {
+      // Jen topný cyklus / B3=0x08 — ne samotné protocení čerpadla; jen po START
       tcPozadavekZap = true;
     } else if (!lgJeTcProvoz(data[2], data[3]) && !cekameNaOrigStart &&
                !lgZapisAktivni() && !cilovyZapnutoTab5) {
@@ -767,45 +737,20 @@ void lgZkontrolujObnovuStavu(uint8_t *data, uint8_t delka) {
   if (millis() - casPosledniAutoObnova < LG_AUTO_OBNOVA_MIN_MS) { return; }
 
   const bool topiNeboCyklus = lgJeTcProvoz(data[2], data[3]);
-  const bool busZiva = lgJeTcSessionZiva(data[2], data[3]);
   const bool cilStav = cilovyZapnutoTab5;
 
-  // Session ON: protocení / B3=0x08 mezi cykly = OK.
-  // Re-START až po delším skutečném klidu (B2=0,B3=0), ne při každém vypnutí pumpy.
-  static unsigned long s_sessionVypOdMs = 0;
-  if (cilStav) {
-    if (busZiva) {
-      s_sessionVypOdMs = 0;
-      return;
+  // Session OFF: nikdy neposílat START/STOP podle A0 (SOLO = HMI je master).
+  if (!cilStav) {
+    if (soloRezimTab5 && topiNeboCyklus) {
+      Serial.printf(
+          "\n[SESSION] SOLO: A0=topi ale session=VYP — NEPosilam auto-START (cekam HMI)\n");
     }
-    if (s_sessionVypOdMs == 0) {
-      s_sessionVypOdMs = millis();
-    }
-    if ((millis() - s_sessionVypOdMs) < LG_SESSION_VYP_GRACE_MS) {
-      return;
-    }
-  } else {
-    s_sessionVypOdMs = 0;
-    // Session OFF: samotné protocení (pumpa) neřešíme; jen skutečný topný cyklus
-    if (!topiNeboCyklus) {
-      return;
-    }
-  }
-
-  // SOLO: nikdy auto-STOP ze SESSION (HMI je master).
-  if (soloRezimTab5 && !cilStav) {
-    Serial.printf(
-        "\n[SESSION] SOLO: A0=topi ale session=VYP — NEPosilam auto-STOP (cekam HMI)\n");
     return;
   }
 
-  Serial.printf("\n[SESSION] A0=%s, chceme %s — znovu odesilame\n",
-                topiNeboCyklus ? "TOPI/CYKLUS" : (busZiva ? "PUMPA" : "VYP"),
-                cilovyZapnutoTab5 ? "ZAP" : "VYP");
-  lgZapisSpust(cilovaTeplotaTab5, cilovyZapnutoTab5, true);
-  casPosledniAutoObnova = millis();
-  casPosledniC0Orig = 0;
-  s_sessionVypOdMs = 0;
+  // Session ON: neauto-startovat z klidu — obnova jen po explicitním START z HMI.
+  (void)topiNeboCyklus;
+  return;
 }
 
 void lgZapisObsluha() {

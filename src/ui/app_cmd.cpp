@@ -38,6 +38,7 @@ bool isCtrlMsg(const AppMsg& msg) {
     case APP_CMD_POWER_STOP:
     case APP_CMD_SETPOINT_ABS:
     case APP_CMD_SETPOINT_DELTA:
+    case APP_CMD_SET_MODE:
       return true;
     case APP_CMD_HMI_ACTION:
       return isCtrlHmiAction(static_cast<UiAkceTlacitko>(msg.arg));
@@ -99,6 +100,11 @@ bool appCmdEnqueueSetpointAbs(int val, UiSpSource src) {
 
 bool appCmdEnqueueAdjust(int delta, UiSpSource src) {
   const AppMsg msg = {APP_CMD_SETPOINT_DELTA, delta, src};
+  return appCmdEnqueue(&msg);
+}
+
+bool appCmdEnqueueMode(bool roomMode, UiSpSource src) {
+  const AppMsg msg = {APP_CMD_SET_MODE, roomMode ? 1 : 0, src};
   return appCmdEnqueue(&msg);
 }
 

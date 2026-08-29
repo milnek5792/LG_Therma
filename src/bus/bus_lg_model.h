@@ -27,6 +27,8 @@ extern bool cilovyZapnutoTab5;
 extern bool cekameNaOrigStart;
 extern bool tcPozadavekZap;
 extern uint8_t cilovaTeplotaTab5;
+/** Jednorázové povolení START sekvence z UI fronty (HMI/MQTT/plán). */
+extern bool lgZapisPovolenStart;
 
 extern char posledniStavovyText[64];
 extern volatile bool potrebaObnovitDisplej;

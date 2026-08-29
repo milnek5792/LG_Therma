@@ -75,6 +75,9 @@ void climateRegulatorInit(void);
 void climateRegulatorTick(void);
 void climateRegulatorRequestImmediateTick(void);
 void climateRegulatorSave(void);
+/** Odložený zápis po změně pokojového SP (HMI/MQTT) — flush v uiBusFlushDeferredStorage. */
+void climateRegulatorRequestSave(void);
+void climateRegulatorFlushPendingSave(void);
 
 const RegulatorConfig* climateRegulatorGetConfig(void);
 RegulatorConfig* climateRegulatorGetConfigMutable(void);

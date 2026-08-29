@@ -44,6 +44,7 @@ float s_lastP = 0.0f;
 float s_lastError = 0.0f;
 bool s_havePrev = false;
 bool s_eco = false;
+bool s_cfgSavePending = false;
 bool s_haveEqBase = false;
 uint8_t s_lastWrittenC = 0;
 bool s_haveWritten = false;
@@ -145,7 +146,7 @@ void adoptOutput(const char* why) {
 }
 
 bool tcBeziProRegulaci(void) {
-  return cilovyZapnutoTab5 || tcPozadavekZap || cekameNaOrigStart || stavZapnuto;
+  return cilovyZapnutoTab5 || tcPozadavekZap || cekameNaOrigStart;
 }
 
 void requestWaterSp(uint8_t tC, uint32_t now) {
@@ -271,6 +272,18 @@ void climateRegulatorInit(void) {
 
 void climateRegulatorSave(void) {
   storageSaveRegulatorConfig(&s_cfg);
+  s_cfgSavePending = false;
+}
+
+void climateRegulatorRequestSave(void) {
+  s_cfgSavePending = true;
+}
+
+void climateRegulatorFlushPendingSave(void) {
+  if (s_cfgSavePending) {
+    climateRegulatorSave();
+    s_cfgSavePending = false;
+  }
 }
 
 const RegulatorConfig* climateRegulatorGetConfig(void) { return &s_cfg; }
@@ -282,7 +295,9 @@ void climateRegulatorAdjustRoomSp(float deltaC) {
 }
 
 void climateRegulatorSetRoomSp(float c) {
+  c = roundf(c * 2.0f) / 2.0f;
   s_cfg.room_sp_c = clampf(c, 18.0f, 24.0f);
+  climateRegulatorRequestSave();
 }
 
 float climateRegulatorRoomSpEffective(void) {

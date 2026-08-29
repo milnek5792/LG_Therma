@@ -25,6 +25,7 @@ bool cilovyZapnutoTab5 = false;
 bool cekameNaOrigStart = false;
 bool tcPozadavekZap = false;
 uint8_t cilovaTeplotaTab5 = 0;
+bool lgZapisPovolenStart = false;
 
 char posledniStavovyText[64] = "Odposlech sbernice - cekam...";
 volatile bool potrebaObnovitDisplej = false;
@@ -52,15 +53,17 @@ void lgModelRestoreSessionFromNvs() {
   }
   lgModelLock();
   cilovaTeplotaTab5 = sp;
-  cilovyZapnutoTab5 = on;
+  // Bezpečnost: po rebootu vždy VYP — START jen po stisku tlačítka.
+  cilovyZapnutoTab5 = false;
   drzetStavAktivni = true;
-  tcPozadavekZap = on;
+  tcPozadavekZap = false;
   if (sp >= 15 && sp <= 65) {
     mCilova = sp;
     novaCilovaTeplota = sp;
   }
   lgModelUnlock();
-  Serial.printf("[BOOT] NVS session %s T=%u\n", on ? "ON" : "OFF", (unsigned)sp);
+  Serial.printf("[BOOT] NVS SP=%u (session OFF do START)%s\n", (unsigned)sp,
+                on ? " — predchozi ON ignorovan" : "");
 }
 
 void lgModelLock() {

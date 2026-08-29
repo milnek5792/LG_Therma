@@ -32,6 +32,7 @@ void uiBusAdjustSetpoint(int deltaC);
 void uiBusQueuePower(bool start);
 void uiBusQueueSetpointC(uint8_t teplotaC);
 void uiBusQueueAdjustSetpoint(int deltaC);
+void uiBusQueueSetRegulationAuto(bool roomMode);
 
 /** Nastaví a zapamatuje režim Auto / ruční. */
 bool uiBusSetRegulationAuto(bool enable);
@@ -40,7 +41,7 @@ bool uiBusSetRegulationAuto(bool enable);
 void uiBusPersistRezim(void);
 
 void uiBusBindingsTick(void);
-/** NVS session — odloženě, volat až po uiLvglTick (flash neblokuje VSYNC). */
+/** NVS session — odloženě po uiBusBindingsTick (flash neblokuje VSYNC). */
 void uiBusFlushDeferredStorage(void);
 
 /** Zpracování ctrl zpráv z appCmdDrainCtrl (LIN / SP / power). */

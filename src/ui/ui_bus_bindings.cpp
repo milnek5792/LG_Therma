@@ -107,7 +107,6 @@ void provedStart() {
   const uint8_t b3 = lgModelA0Bajt(3);
   const bool uzDrzeny = drzenyZapnuty();
   const bool tcBezi = lgJeTcProvoz(b2, b3);
-  const bool busZiva = lgJeTcSessionZiva(b2, b3);
   uint8_t t = aktualniCilovaTeplota();
   lgModelUnlock();
 
@@ -123,8 +122,8 @@ void provedStart() {
     return;
   }
 
-  // Po restartu / cizí start: TČ už běží → jen převezmi session, neposílej C0 START
-  if (tcBezi || (busZiva && lgMaCerstoA0())) {
+  // Po restartu / cizí topný cyklus: převezmi session bez C0 (ne oběhové čerpadlo).
+  if (tcBezi) {
     lgModelLock();
     novaCilovaTeplota = t;
     mCilova = t;
@@ -174,7 +173,7 @@ void provedTeplotaAbsolutni(uint8_t nova, UiSpSource src) {
     return;
   }
 
-  if (!drzenyZapnuty() && !stavZapnuto) {
+  if (!drzenyZapnuty()) {
     ESP_LOGW(TAG, "SP vody %u ignorovan — nejdriv START (src=%s)", (unsigned)nova,
              spSrcName(src));
     return;
@@ -195,6 +194,8 @@ void provedTeplotaAbsolutni(uint8_t nova, UiSpSource src) {
   uiEez.sp_pending_ms = millis();
   potrebaObnovitDisplej = true;
 
+  storageRequestSaveTcSession(cilovyZapnutoTab5, nova);
+
   ESP_LOGI(TAG, "setpoint cmd -> %u C src=%s", (unsigned)nova, spSrcName(src));
 }
 
@@ -209,12 +210,12 @@ void provedTeplotaZmena(int delta, UiSpSource src) {
   provedTeplotaAbsolutni((uint8_t)nova, src);
 }
 
-void provedRoomSpZmena(int delta, UiSpSource src) {
+void provedRoomSpZmena(float deltaC, UiSpSource src) {
   if (!allowRoomSpWrite(src)) {
     ESP_LOGW(TAG, "room SP adjust blokovan (src=%s)", spSrcName(src));
     return;
   }
-  climateRegulatorAdjustRoomSp((float)delta);
+  climateRegulatorAdjustRoomSp(deltaC);
   ESP_LOGI(TAG, "Auto room SP -> %.1f (src=%s)",
            (double)climateRegulatorGetConfig()->room_sp_c, spSrcName(src));
 }
@@ -246,17 +247,22 @@ void processAppMsg(const AppMsg& msg) {
       break;
     case APP_CMD_SETPOINT_ABS:
       if (autoMode) {
-        provedRoomSpAbs((float)msg.arg, msg.src);
+        provedRoomSpAbs((float)msg.arg / 10.0f, msg.src);
       } else {
         provedTeplotaAbsolutni((uint8_t)msg.arg, msg.src);
       }
       break;
     case APP_CMD_SETPOINT_DELTA:
       if (autoMode) {
-        provedRoomSpZmena(msg.arg, msg.src);
+        provedRoomSpZmena((float)msg.arg / 10.0f, msg.src);
       } else {
         provedTeplotaZmena(msg.arg, msg.src);
       }
+      break;
+    case APP_CMD_SET_MODE:
+      uiBusSetRegulationAuto(msg.arg != 0);
+      ESP_LOGI(TAG, "queue → mode %s (src=%s)",
+               msg.arg ? "room" : "water", spSrcName(msg.src));
       break;
     default:
       break;
@@ -278,14 +284,14 @@ void uiBusHandleAkce(UiAkceTlacitko akce) {
       break;
     case UI_AKCE_TEPLOTA_PLUS:
       if (uiEez.rezim == UI_REZIM_AUTO) {
-        provedRoomSpZmena(1, UI_SP_SRC_HMI);
+        provedRoomSpZmena(0.5f, UI_SP_SRC_HMI);
       } else {
         provedTeplotaZmena(1, UI_SP_SRC_HMI);
       }
       break;
     case UI_AKCE_TEPLOTA_MINUS:
       if (uiEez.rezim == UI_REZIM_AUTO) {
-        provedRoomSpZmena(-1, UI_SP_SRC_HMI);
+        provedRoomSpZmena(-0.5f, UI_SP_SRC_HMI);
       } else {
         provedTeplotaZmena(-1, UI_SP_SRC_HMI);
       }
@@ -307,7 +313,7 @@ void uiBusHandleAkce(UiAkceTlacitko akce) {
         lgModelUnlock();
       } else {
         uiEez.rezim = UI_REZIM_AUTO;
-        if (drzenyZapnuty() || stavZapnuto) {
+        if (drzenyZapnuty()) {
           RegulatorSnapshot snap{};
           climateRegulatorGetSnapshot(&snap);
           provedTeplotaAbsolutni(snap.t_water_c, UI_SP_SRC_REGULATOR);
@@ -334,7 +340,7 @@ void uiBusSetSetpointC(uint8_t teplotaC) {
 
 void uiBusAdjustSetpoint(int deltaC) {
   if (uiEez.rezim == UI_REZIM_AUTO) {
-    provedRoomSpZmena(deltaC, UI_SP_SRC_HMI);
+    provedRoomSpZmena((float)deltaC / 10.0f, UI_SP_SRC_HMI);
   } else {
     provedTeplotaZmena(deltaC, UI_SP_SRC_HMI);
   }
@@ -350,6 +356,10 @@ void uiBusQueueSetpointC(uint8_t teplotaC) {
 
 void uiBusQueueAdjustSetpoint(int deltaC) {
   appCmdEnqueueAdjust(deltaC, UI_SP_SRC_MQTT);
+}
+
+void uiBusQueueSetRegulationAuto(bool roomMode) {
+  appCmdEnqueueMode(roomMode, UI_SP_SRC_MQTT);
 }
 
 void uiBusPlanApplyStart(void) {
@@ -390,6 +400,7 @@ void uiBusFlushDeferredStorage(void) {
   }
   s_lastFlushMs = now;
   storageFlushTcSessionPending();
+  climateRegulatorFlushPendingSave();
 }
 
 void uiBusProcessAppMsg(const AppMsg* msg) {

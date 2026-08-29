@@ -103,7 +103,7 @@ extern "C" {
 
 const char* get_var_teplota_vody_set() {
   if (uiEez.rezim == UI_REZIM_AUTO) {
-    return fmtTemp(climateRegulatorRoomSpEffective());
+    return fmtTempDeci(climateRegulatorRoomSpEffective());
   }
   return fmtTemp(uiEez.teplota_vody_set);
 }

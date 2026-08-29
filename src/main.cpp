@@ -93,14 +93,18 @@ void setup() {
 void loop() {
   const uint32_t now = millis();
 
-  // LVGL/VSYNC první — LIN/NVS nesmí blokovat flush
-  uiLvglTick();
-
+  // Sync/ctrl před kreslením — ui_tick vidí aktuální uiEez
   if (lgBusIsReady()) {
     uiBusBindingsTick();
-    uiBusFlushDeferredStorage();
   } else {
     appCmdDrainCtrl();
+  }
+
+  uiLvglTick();
+
+  // NVS až po LVGL — flash na core 1 by jinak blokoval linTask (UART RX)
+  if (lgBusIsReady()) {
+    uiBusFlushDeferredStorage();
   }
 
   static uint32_t s_lastLoopHb = 0;

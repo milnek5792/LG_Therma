@@ -24,9 +24,12 @@ enum AppCmd : uint8_t {
   APP_CMD_HMI_ACTION,  // arg = UiAkceTlacitko
   APP_CMD_POWER_START,
   APP_CMD_POWER_STOP,
-  /** Auto: pokoj; ruční: voda — řeší se při drain podle uiEez.rezim. */
+  /** Auto: pokoj (arg = desetiny °C, 22.5 → 225); ruční: voda (celé °C). */
   APP_CMD_SETPOINT_ABS,
+  /** Auto: pokoj (arg = desetiny °C, 0.5 → 5); ruční: voda (celé °C). */
   APP_CMD_SETPOINT_DELTA,
+  /** arg: 1 = room (Auto), 0 = water (ruční). */
+  APP_CMD_SET_MODE,
 };
 
 struct AppMsg {
@@ -44,6 +47,7 @@ bool appCmdEnqueueHmi(UiAkceTlacitko akce);
 bool appCmdEnqueuePower(bool start, UiSpSource src);
 bool appCmdEnqueueSetpointAbs(int val, UiSpSource src);
 bool appCmdEnqueueAdjust(int delta, UiSpSource src);
+bool appCmdEnqueueMode(bool roomMode, UiSpSource src);
 
 /** UI kontext (ui_tick): navigace, Wi‑Fi/MQTT formuláře. */
 void appCmdDrainUi(void);
