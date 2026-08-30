@@ -1,0 +1,134 @@
+[
+  {
+    "name": "teplota_vody_set",
+    "type": "float",
+    "defaultValue": "40",
+    "description": "Pozadovana teplota vody (setpoint)"
+  },
+  {
+    "name": "teplota_vody_vstup",
+    "type": "float",
+    "defaultValue": "0",
+    "description": "Teplota vody vstup T/C"
+  },
+  {
+    "name": "teplota_vody_vystup",
+    "type": "float",
+    "defaultValue": "0",
+    "description": "Teplota vody vystup T/C"
+  },
+  {
+    "name": "teplota_vnitrni",
+    "type": "float",
+    "defaultValue": "-1000",
+    "description": "Pokojova teplota (BLE), -1000 = neplatna"
+  },
+  {
+    "name": "teplota_venkovni",
+    "type": "float",
+    "defaultValue": "-1000",
+    "description": "Venkovni teplota, -1000 = neplatna"
+  },
+  {
+    "name": "teplota_spad",
+    "type": "float",
+    "defaultValue": "0",
+    "description": "Delta T |vystup - vstup|"
+  },
+  {
+    "name": "rezim",
+    "type": "integer",
+    "defaultValue": "1",
+    "description": "0=Auto, 1=Vystupni teplota"
+  },
+  {
+    "name": "stav_tc",
+    "type": "integer",
+    "defaultValue": "0",
+    "description": "0=Vyp 1=Cekam orig 2=Prestart 3=Beh"
+  },
+  {
+    "name": "sig_chod",
+    "type": "boolean",
+    "defaultValue": "0",
+    "description": "T/C v provozu"
+  },
+  {
+    "name": "sig_cerpadlo",
+    "type": "boolean",
+    "defaultValue": "0",
+    "description": "Oběhove cerpadlo"
+  },
+  {
+    "name": "sig_kompresor",
+    "type": "boolean",
+    "defaultValue": "0",
+    "description": "Kompresor"
+  },
+  {
+    "name": "sig_el_topeni",
+    "type": "boolean",
+    "defaultValue": "0",
+    "description": "El. patrona"
+  },
+  {
+    "name": "sig_odmrazovani",
+    "type": "boolean",
+    "defaultValue": "0",
+    "description": "Odmrazovani"
+  },
+  {
+    "name": "sig_wifi",
+    "type": "boolean",
+    "defaultValue": "0",
+    "description": "WiFi pripojeno"
+  },
+  {
+    "name": "sig_mqtt",
+    "type": "boolean",
+    "defaultValue": "0",
+    "description": "MQTT OK"
+  },
+  {
+    "name": "sig_ble",
+    "type": "boolean",
+    "defaultValue": "0",
+    "description": "BLE senzor OK"
+  },
+  {
+    "name": "sig_utlum",
+    "type": "boolean",
+    "defaultValue": "0",
+    "description": "Aktivni casovy utlum"
+  },
+  {
+    "name": "sig_alarm",
+    "type": "boolean",
+    "defaultValue": "0",
+    "description": "Porucha / alarm"
+  },
+  {
+    "name": "cas_text",
+    "type": "string",
+    "defaultValue": "\"--:--\"",
+    "description": "Cas HH:MM"
+  },
+  {
+    "name": "datum_text",
+    "type": "string",
+    "defaultValue": "\"--.--.----\"",
+    "description": "Datum DD.MM.RRRR"
+  },
+  {
+    "name": "cas_platny",
+    "type": "boolean",
+    "defaultValue": "0",
+    "description": "NTP synchronizovan"
+  },
+  {
+    "name": "akce_tlacitko",
+    "type": "integer",
+    "defaultValue": "0",
+    "description": "0=nic 1=StartStop 2=+ 3=- 4=rezim"
+  }
+]

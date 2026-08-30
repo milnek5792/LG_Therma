@@ -1,0 +1,267 @@
+{
+  "themesVersion": 1,
+  "objID": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "settings": {
+    "objID": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+    "general": {
+      "objID": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "projectVersion": "v3",
+      "projectType": "lvgl",
+      "lvglVersion": "9.0",
+      "extensions": [],
+      "imports": [],
+      "flowSupport": false,
+      "displayWidth": 1280,
+      "displayHeight": 720,
+      "displayBorderRadius": 0,
+      "colorFormat": "BGR",
+      "resourceFiles": [],
+      "hiddenWidgetLines": "dimmed",
+      "dimmedLinesOpacity": "20"
+    },
+    "build": {
+      "objID": "d4e5f6a7-b8c9-0123-def0-234567890123",
+      "configurations": [
+        {
+          "objID": "e5f6a7b8-c9d0-1234-ef01-345678901234",
+          "name": "Default"
+        }
+      ],
+      "files": [],
+      "destinationFolder": "src\\ui",
+      "separateFolderForImagesAndFonts": false,
+      "lvglInclude": "lvgl/lvgl.h",
+      "generateSourceCodeForEezFramework": false,
+      "compressFlowDefinition": false,
+      "executionQueueSize": 1000,
+      "expressionEvaluatorStackSize": 20
+    }
+  },
+  "variables": {
+    "objID": "f6a7b8c9-d0e1-2345-f012-456789012345",
+    "globalVariables": [
+      {
+        "objID": "10000001-0001-4001-8001-000000000001",
+        "id": 1,
+        "name": "teplota_vody_set",
+        "description": "Pozadovana teplota vody (setpoint)",
+        "type": "float",
+        "defaultValue": "40",
+        "native": true
+      },
+      {
+        "objID": "10000002-0002-4002-8002-000000000002",
+        "id": 2,
+        "name": "teplota_vody_vstup",
+        "description": "Teplota vody vstup T/C",
+        "type": "float",
+        "defaultValue": "0",
+        "native": true
+      },
+      {
+        "objID": "10000003-0003-4003-8003-000000000003",
+        "id": 3,
+        "name": "teplota_vody_vystup",
+        "description": "Teplota vody vystup T/C",
+        "type": "float",
+        "defaultValue": "0",
+        "native": true
+      },
+      {
+        "objID": "10000004-0004-4004-8004-000000000004",
+        "id": 4,
+        "name": "teplota_vnitrni",
+        "description": "Pokojova teplota (BLE), -1000 = neplatna",
+        "type": "float",
+        "defaultValue": "-1000",
+        "native": true
+      },
+      {
+        "objID": "10000005-0005-4005-8005-000000000005",
+        "id": 5,
+        "name": "teplota_venkovni",
+        "description": "Venkovni teplota, -1000 = neplatna",
+        "type": "float",
+        "defaultValue": "-1000",
+        "native": true
+      },
+      {
+        "objID": "10000006-0006-4006-8006-000000000006",
+        "id": 6,
+        "name": "teplota_spad",
+        "description": "Delta T |vystup - vstup|",
+        "type": "float",
+        "defaultValue": "0",
+        "native": true
+      },
+      {
+        "objID": "10000007-0007-4007-8007-000000000007",
+        "id": 7,
+        "name": "rezim",
+        "description": "0=Auto, 1=Vystupni teplota",
+        "type": "integer",
+        "defaultValue": "1",
+        "native": true
+      },
+      {
+        "objID": "10000008-0008-4008-8008-000000000008",
+        "id": 8,
+        "name": "stav_tc",
+        "description": "0=Vyp 1=Cekam orig 2=Prestart 3=Beh",
+        "type": "integer",
+        "defaultValue": "0",
+        "native": true
+      },
+      {
+        "objID": "10000009-0009-4009-8009-000000000009",
+        "id": 9,
+        "name": "sig_chod",
+        "description": "T/C v provozu",
+        "type": "boolean",
+        "defaultValue": "0",
+        "native": true
+      },
+      {
+        "objID": "1000000a-000a-400a-800a-00000000000a",
+        "id": 10,
+        "name": "sig_cerpadlo",
+        "description": "Oběhove cerpadlo",
+        "type": "boolean",
+        "defaultValue": "0",
+        "native": true
+      },
+      {
+        "objID": "1000000b-000b-400b-800b-00000000000b",
+        "id": 11,
+        "name": "sig_kompresor",
+        "description": "Kompresor",
+        "type": "boolean",
+        "defaultValue": "0",
+        "native": true
+      },
+      {
+        "objID": "1000000c-000c-400c-800c-00000000000c",
+        "id": 12,
+        "name": "sig_el_topeni",
+        "description": "El. patrona",
+        "type": "boolean",
+        "defaultValue": "0",
+        "native": true
+      },
+      {
+        "objID": "1000000d-000d-400d-800d-00000000000d",
+        "id": 13,
+        "name": "sig_odmrazovani",
+        "description": "Odmrazovani",
+        "type": "boolean",
+        "defaultValue": "0",
+        "native": true
+      },
+      {
+        "objID": "1000000e-000e-400e-800e-00000000000e",
+        "id": 14,
+        "name": "sig_wifi",
+        "description": "WiFi pripojeno",
+        "type": "boolean",
+        "defaultValue": "0",
+        "native": true
+      },
+      {
+        "objID": "1000000f-000f-400f-800f-00000000000f",
+        "id": 15,
+        "name": "sig_mqtt",
+        "description": "MQTT OK",
+        "type": "boolean",
+        "defaultValue": "0",
+        "native": true
+      },
+      {
+        "objID": "10000010-0010-4010-8010-000000000010",
+        "id": 16,
+        "name": "sig_ble",
+        "description": "BLE senzor OK",
+        "type": "boolean",
+        "defaultValue": "0",
+        "native": true
+      },
+      {
+        "objID": "10000011-0011-4011-8011-000000000011",
+        "id": 17,
+        "name": "sig_utlum",
+        "description": "Aktivni casovy utlum",
+        "type": "boolean",
+        "defaultValue": "0",
+        "native": true
+      },
+      {
+        "objID": "10000012-0012-4012-8012-000000000012",
+        "id": 18,
+        "name": "sig_alarm",
+        "description": "Porucha / alarm",
+        "type": "boolean",
+        "defaultValue": "0",
+        "native": true
+      },
+      {
+        "objID": "10000013-0013-4013-8013-000000000013",
+        "id": 19,
+        "name": "cas_text",
+        "description": "Cas HH:MM",
+        "type": "string",
+        "defaultValue": "\"--:--\"",
+        "native": true
+      },
+      {
+        "objID": "10000014-0014-4014-8014-000000000014",
+        "id": 20,
+        "name": "datum_text",
+        "description": "Datum DD.MM.RRRR",
+        "type": "string",
+        "defaultValue": "\"--.--.----\"",
+        "native": true
+      },
+      {
+        "objID": "10000015-0015-4015-8015-000000000015",
+        "id": 21,
+        "name": "cas_platny",
+        "description": "NTP synchronizovan",
+        "type": "boolean",
+        "defaultValue": "0",
+        "native": true
+      },
+      {
+        "objID": "10000016-0016-4016-8016-000000000016",
+        "id": 22,
+        "name": "akce_tlacitko",
+        "description": "0=nic 1=StartStop 2=+ 3=- 4=rezim",
+        "type": "integer",
+        "defaultValue": "0",
+        "native": true
+      }
+    ],
+    "structures": [],
+    "enums": []
+  },
+  "actions": [],
+  "userPages": [],
+  "userWidgets": [],
+  "lvglStyles": {
+    "objID": "a7b8c9d0-e1f2-3456-0123-567890123456",
+    "styles": [],
+    "defaultStyles": {}
+  },
+  "lvglGroups": {
+    "objID": "b8c9d0e1-f2a3-4567-1234-678901234567",
+    "groups": []
+  },
+  "fonts": [],
+  "bitmaps": [],
+  "colors": [],
+  "themes": [
+    {
+      "objID": "c9d0e1f2-a3b4-5678-2345-789012345678",
+      "name": "Default",
+      "colors": []
+    }
+  ]
+}

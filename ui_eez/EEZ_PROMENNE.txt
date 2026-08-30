@@ -1,0 +1,67 @@
+LG Therma V — seznam promennych pro EEZ Studio (Native variables)
+=================================================================
+Project -> Variables -> Add. Jmena a typy presne podle tabulky.
+Firmware: ui_eez_model.h (EEZ_VAR_* makra)
+
+TEPLOTY (Float nebo Integer, jednotka °C)
+-----------------------------------------
+teplota_vody_set      pozadovana teplota vody (setpoint)
+teplota_vody_vstup    teplota vody na vstupu T/C
+teplota_vody_vystup   teplota vody na vystupu T/C
+teplota_vnitrni       pokojova / BLE (zatim ---)
+teplota_venkovni      venkovni (zatim ---, budouci senzor)
+teplota_spad          |vystup - vstup| Delta T
+
+REZIMY (Integer — enum)
+-----------------------
+rezim                 0 = Auto (adaptivni/pokoj)
+                      1 = Vystupni teplota (primy setpoint vody)
+stav_tc               0 = Vyp
+                      1 = Cekam orig.
+                      2 = Prestart
+                      3 = Beh
+
+SIGNALKY (Boolean — LED / ikona)
+--------------------------------
+sig_chod              T/C v provozu (PRESTART nebo beh)
+sig_cerpadlo          obehove cerpadlo
+sig_kompresor         kompresor (stabilni beh B3=0x0A)
+sig_el_topeni         el. patrona / pridavne topeni
+sig_odmrazovani       odmrazovaci cyklus
+sig_wifi              WiFi pripojeno (ESP32-C6)
+sig_mqtt              MQTT broker OK
+sig_ble               BLE pokojovy senzor OK
+sig_utlum               aktivni casovy utlum (planovac)
+sig_alarm             porucha / chyba
+
+CAS (String + Boolean)
+----------------------
+cas_text              "14:32"
+datum_text            "20.07.2026"
+cas_platny            true = NTP synchronizovan
+
+AKCE TLACITTEK (Integer — EEZ -> firmware)
+-------------------------------------------
+akce_tlacitko         0 = zadna
+                      1 = Start/Stop
+                      2 = teplota +
+                      3 = teplota -
+                      4 = prepni rezim Auto/Vystupni
+
+V EEZ Flow u tlacitka: akce_tlacitko = 1; (pak firmware vynuluje)
+
+DOPORUCENE AKCE V EEZ (bez Flow logiky — jen prirazeni promenne)
+---------------------------------------------------------------
+Btn Start/Stop  -> Set Variable akce_tlacitko = 1
+Btn +           -> Set Variable akce_tlacitko = 2
+Btn -           -> Set Variable akce_tlacitko = 3
+Btn Rezim       -> Set Variable akce_tlacitko = 4
+
+WIDGETY — navrh
+---------------
+- Label teplota_vody_set velky uprostred
+- Bargraf nebo label vstup/vystup
+- Row ikon: cerpadlo, kompresor, el.topeni, odmrazovani
+- Row sit: wifi, mqtt, ble
+- Horni lista: cas_text, datum_text
+- Tlacitko Start barva podle stav_tc

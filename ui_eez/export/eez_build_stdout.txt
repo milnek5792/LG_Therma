@@ -1,0 +1,22 @@
+
+Build project: C:\Users\mnekv\Documents\Arduino\LG_Therma\ui_eez\LG_Therma_HMI.eez-project
+Configuration: Default
+	Compressed size: 47
+	Unused style: btn_step
+	Unused style: btn_menu
+	Unused style: btn_tichy
+No error and no warning detected
+File "C:\Users\mnekv\Documents\Arduino\LG_Therma\ui_eez\ui_eez\export/screens.h" built
+File "C:\Users\mnekv\Documents\Arduino\LG_Therma\ui_eez\ui_eez\export/screens.c" built
+File "C:\Users\mnekv\Documents\Arduino\LG_Therma\ui_eez\ui_eez\export/actions.h" built
+File "C:\Users\mnekv\Documents\Arduino\LG_Therma\ui_eez\ui_eez\export/vars.h" built
+File "C:\Users\mnekv\Documents\Arduino\LG_Therma\ui_eez\ui_eez\export/structs.h" built
+File "C:\Users\mnekv\Documents\Arduino\LG_Therma\ui_eez\ui_eez\export/images.h" built
+File "C:\Users\mnekv\Documents\Arduino\LG_Therma\ui_eez\ui_eez\export/images.c" built
+File "C:\Users\mnekv\Documents\Arduino\LG_Therma\ui_eez\ui_eez\export/fonts.h" built
+File "C:\Users\mnekv\Documents\Arduino\LG_Therma\ui_eez\ui_eez\export/styles.h" built
+File "C:\Users\mnekv\Documents\Arduino\LG_Therma\ui_eez\ui_eez\export/styles.c" built
+File "C:\Users\mnekv\Documents\Arduino\LG_Therma\ui_eez\ui_eez\export/ui.h" built
+File "C:\Users\mnekv\Documents\Arduino\LG_Therma\ui_eez\ui_eez\export/ui.c" built
+Build duration: 0.188 seconds
+Build successfully finished at 22. 7. 2026 16:00:15
