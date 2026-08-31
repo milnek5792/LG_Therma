@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#121214">
+  <meta name="description" content="Dálkové ovládání LG Therma — prototyp PWA">
+  <title>LG Therma</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.svg">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="topbar">
+      <span id="clock" class="clock">--:--</span>
+      <div class="topbar-status">
+        <span id="mqtt-pill" class="pill pill-muted">MQTT ---</span>
+        <span id="lin-pill" class="pill pill-muted">LIN ---</span>
+      </div>
+    </header>
+
+    <div id="fault-banner" class="fault-banner hidden" role="alert">
+      <strong>Poruchové hlášení</strong>
+      <span id="fault-text"></span>
+    </div>
+
+    <p class="demo-badge">Prototyp — demo data, bez skutečného MQTT</p>
+
+    <!-- DOMŮ -->
+    <main id="view-home" class="view view-active">
+      <section class="setpoint-panel">
+        <h1 id="sp-title" class="sp-title sp-room">Nastavení pokojové teploty</h1>
+        <div class="sp-row">
+          <button type="button" class="btn-round" id="btn-minus" aria-label="Snížit">−</button>
+          <div class="sp-value-wrap">
+            <div class="sp-value-line">
+              <span id="sp-value" class="sp-value">22.5</span>
+              <span class="sp-unit">°C</span>
+            </div>
+            <p id="water-sp" class="water-sp hidden">Voda SP 38 °C</p>
+          </div>
+          <button type="button" class="btn-round" id="btn-plus" aria-label="Zvýšit">+</button>
+        </div>
+        <div class="mode-row">
+          <button type="button" class="chip chip-active" id="btn-mode-auto">Auto (pokoj)</button>
+          <button type="button" class="chip" id="btn-mode-water">Výstupní T (voda)</button>
+        </div>
+      </section>
+
+      <section class="plan-strip" aria-label="Stav plánu (jen náhled)">
+        <div class="plan-strip-title" id="plan-title">TÝDENNÍ PLÁN AKTIVNÍ</div>
+        <div class="plan-strip-text" id="plan-text">VT2: běžný režim</div>
+        <p class="plan-hint">Plán a regulátor se nastavují pouze na Tab5.</p>
+      </section>
+
+      <section class="temp-grid">
+        <div class="temp-card">
+          <div class="temp-label">Vnitřní teplota</div>
+          <div class="temp-value" id="temp-room">21.3</div>
+        </div>
+        <div class="temp-card">
+          <div class="temp-label">Venkovní teplota</div>
+          <div class="temp-value temp-outdoor" id="temp-outdoor">8.2</div>
+        </div>
+        <div class="temp-card">
+          <div class="temp-label">Teplota na vstupu</div>
+          <div class="temp-value" id="temp-inlet">35</div>
+        </div>
+        <div class="temp-card">
+          <div class="temp-label">Teplota na výstupu</div>
+          <div class="temp-value temp-outlet" id="temp-outlet">42</div>
+        </div>
+      </section>
+
+      <section class="status-grid" aria-label="Stav zařízení">
+        <div class="status-item" data-key="power">
+          <span class="led" id="led-power"></span>
+          <span>Zapnuto</span>
+        </div>
+        <div class="status-item" data-key="pump">
+          <span class="led" id="led-pump"></span>
+          <span>Oběhové čerpadlo</span>
+        </div>
+        <div class="status-item" data-key="compressor">
+          <span class="led" id="led-compressor"></span>
+          <span>Kompresor</span>
+        </div>
+        <div class="status-item" data-key="defrost">
+          <span class="led led-warn" id="led-defrost"></span>
+          <span>Odmrazování</span>
+        </div>
+        <div class="status-item" data-key="elec">
+          <span class="led led-warn" id="led-elec"></span>
+          <span>Přídavné el. topení</span>
+        </div>
+        <div class="status-item" data-key="quiet">
+          <span class="led" id="led-quiet"></span>
+          <span>Tichý režim</span>
+        </div>
+      </section>
+
+      <section class="power-row">
+        <button type="button" class="btn-power btn-start" id="btn-start">START</button>
+        <button type="button" class="btn-power btn-stop" id="btn-stop">STOP</button>
+      </section>
+
+      <button type="button" class="btn-quiet-toggle" id="btn-quiet">Tichý režim: VYP</button>
+    </main>
+
+    <!-- NASTAVENÍ -->
+    <main id="view-settings" class="view" hidden>
+      <h2 class="view-heading">Připojení MQTT</h2>
+      <p class="view-lead">
+        PWA slouží jen k ovládání. Časový plán a regulátor PID zůstávají na Tab5.
+      </p>
+
+      <form id="settings-form" class="settings-form" autocomplete="off">
+        <label class="field">
+          <span>Broker (WSS)</span>
+          <input type="url" id="cfg-host" placeholder="wss://broker.example.com:8084/mqtt">
+        </label>
+        <label class="field">
+          <span>Uživatel</span>
+          <input type="text" id="cfg-user" autocomplete="username">
+        </label>
+        <label class="field">
+          <span>Heslo</span>
+          <input type="password" id="cfg-pass" autocomplete="current-password">
+        </label>
+        <label class="field">
+          <span>Topic prefix</span>
+          <input type="text" id="cfg-prefix" value="lgtherma">
+        </label>
+        <div class="settings-actions">
+          <button type="button" class="btn-primary" id="btn-connect">Připojit</button>
+          <button type="button" class="btn-secondary" id="btn-disconnect" disabled>Odpojit</button>
+        </div>
+      </form>
+
+      <section class="settings-info">
+        <h3>Ovládací topicy (náhled)</h3>
+        <ul class="topic-list">
+          <li><code>…/cmd/watch</code> ON při otevření aplikace</li>
+          <li><code>…/cmd/setpoint</code> hodnota nebo + / −</li>
+          <li><code>…/cmd/mode</code> room / water</li>
+          <li><code>…/cmd/power</code> ON / OFF</li>
+          <li><code>…/cmd/quiet</code> ON / OFF</li>
+        </ul>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Hlavní navigace">
+      <button type="button" class="nav-btn nav-active" data-view="home">
+        <span class="nav-icon">⌂</span>
+        <span>Domů</span>
+      </button>
+      <button type="button" class="nav-btn" data-view="settings">
+        <span class="nav-icon">⚙</span>
+        <span>Nastavení</span>
+      </button>
+    </nav>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
