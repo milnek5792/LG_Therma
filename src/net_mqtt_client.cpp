@@ -4,6 +4,7 @@
 
 #include "mqtt_config.h"
 #include "net_wifi_mgr.h"
+#include "net_ota.h"
 #include "net_sdio_arbiter.h"
 #include "ui_eez_model.h"
 #include "ui_bus_bindings.h"
@@ -849,6 +850,9 @@ bool s_displayHeldForTls = false;
 TaskHandle_t s_asyncSuspended = nullptr;
 
 void resumeCore1AfterMqtt() {
+  if (netOtaIsBusy()) {
+    return;
+  }
   if (s_displayHeldForTls) {
     uiDisplayBusUnlock();
     s_displayHeldForTls = false;
@@ -874,6 +878,9 @@ void resumeCore1AfterMqtt() {
 
 /** Po úspěšném MQTT: pusť Core1, ale drž LVGL freeze (unfreeze shazuje TLS). */
 void resumeCore1SoftAfterMqtt(uint32_t freezeMs) {
+  if (netOtaIsBusy()) {
+    return;
+  }
   if (s_displayHeldForTls) {
     uiDisplayBusUnlock();
     s_displayHeldForTls = false;
@@ -1002,17 +1009,17 @@ bool reconnectMqttLocked() {
   Serial.printf("[MQTT] clientId=%s\n", s_clientId);
 
   if (!netSdioCanMqtt()) {
-    setStatus("Cekam UI...");
+    setStatus("Čekám na UI...");
     return false;
   }
 
   if (!timeOkForTls()) {
-    setStatus("Cekam cas/NTP");
+    setStatus("Čekám na čas/NTP");
     Serial.println("[MQTT] TLS potrebuje platny cas (NTP/RTC)");
     return false;
   }
   if (!netWifiIsConnected()) {
-    setStatus("Cekam WiFi...");
+    setStatus("Čekám na Wi-Fi...");
     return false;
   }
 
@@ -1033,7 +1040,7 @@ bool reconnectMqttLocked() {
   s_tls.haveForcedIp = true;
 
   if (!netSdioTryBeginMqtt()) {
-    setStatus("Cekam SDIO...");
+    setStatus("Čekám na SDIO...");
     resumeCore1AfterMqtt();
     return false;
   }
@@ -1063,7 +1070,7 @@ bool reconnectMqttLocked() {
   s_mqtt.setKeepAlive(60);
   s_mqtt.setSocketTimeout(MQTT_SOCKET_TIMEOUT_S);
 
-  setStatus("Pripojovani...");
+  setStatus("Připojování...");
   Serial.printf("[MQTT] Pripojuji k EMQX (timeout=%ds)...", MQTT_SOCKET_TIMEOUT_S);
   logHeap("pred connect");
   vTaskDelay(pdMS_TO_TICKS(200));
@@ -1125,7 +1132,7 @@ bool reconnectMqttLocked() {
   s_reconnectBackoffMs = 15000;
   s_linkUpMs = millis();
   s_lastTeleMs = millis();
-  setStatus("Pripojeno");
+  setStatus("Připojeno");
 
   // Drž LVGL freeze — plný unfreeze shazuje TLS. Touch může freeze zrušit dotykem.
   resumeCore1SoftAfterMqtt(8000);
@@ -1146,7 +1153,7 @@ void mqttWorker(void* /*arg*/) {
       bootReadyMs = millis();
       s_wantConnect = true;
       Serial.println("[MQTT] boot: WiFi+NTP OK — cekam 3s pred connect");
-      setStatus("Pripojovani...");
+      setStatus("Připojování...");
     }
     if (bootReady && !bootConnectSent && (millis() - bootReadyMs >= 3000)) {
       bootConnectSent = true;
@@ -1166,15 +1173,15 @@ void mqttWorker(void* /*arg*/) {
     if (s_requestConnect) {
       if (!s_enabled || !netWifiIsConnected()) {
         s_requestConnect = false;
-        setStatus(!netWifiIsConnected() ? "Nejdriv Wi-Fi" : "Vypnuto");
+        setStatus(!netWifiIsConnected() ? "Nejdřív Wi-Fi" : "Vypnuto");
       } else if (!bootReady) {
-        setStatus("Ceka na Wi-Fi");
+        setStatus("Čeká na Wi-Fi");
       } else if (!netSdioCanMqtt()) {
-        setStatus("Cekam UI...");
+        setStatus("Čekám na UI...");
       } else if (xSemaphoreTake(s_mtx, portMAX_DELAY) == pdTRUE) {
         s_requestConnect = false;
         netSdioBumpWatchDefault();
-        setStatus("Pripojovani...");
+        setStatus("Připojování...");
         reconnectMqttLocked();
         s_lastReconnectMs = millis();
         xSemaphoreGive(s_mtx);
@@ -1228,16 +1235,16 @@ void mqttWorker(void* /*arg*/) {
             }
 #endif
             if (s_connected) {
-              setStatus("Pripojeno");
+              setStatus("Připojeno");
             }
           }
         } else if ((now - s_lastReconnectMs) >= s_reconnectBackoffMs) {
           if (!netSdioCanMqtt()) {
-            setStatus("Cekam UI...");
+            setStatus("Čekám na UI...");
             s_lastReconnectMs = now - s_reconnectBackoffMs + 2000;
           } else {
           s_lastReconnectMs = now;
-          setStatus("Pripojovani...");
+          setStatus("Připojování...");
           Serial.printf("[MQTT] reconnect (backoff %lu ms)...\n",
                         (unsigned long)s_reconnectBackoffMs);
           if (reconnectMqttLocked()) {
@@ -1287,7 +1294,7 @@ void netMqttInit() {
   s_wantConnect = true;
   s_bootSettled = false;
   fillHostDisplay();
-  setStatus("Ceka na Wi-Fi");
+  setStatus("Čeká na Wi-Fi");
   s_mqtt.setCallback(mqttCallback);
   s_mqtt.setBufferSize(1024);
   if (!s_mtx) {
@@ -1325,7 +1332,7 @@ void netMqttSetEnabled(bool on) {
     return;
   }
   s_wantConnect = true;
-  setStatus("Pripojovani...");
+  setStatus("Připojování...");
   s_requestConnect = true;
 }
 
@@ -1333,7 +1340,7 @@ bool netMqttIsEnabled() { return s_enabled; }
 
 void netMqttConnect() {
   if (!netWifiIsEnabled() || !netWifiIsConnected()) {
-    setStatus("Nejdriv Wi-Fi");
+    setStatus("Nejdřív Wi-Fi");
     Serial.println("[MQTT] nejdriv Wi-Fi");
     return;
   }
@@ -1342,7 +1349,7 @@ void netMqttConnect() {
   s_lastReconnectMs = 0;
   fillHostDisplay();
   netSdioBumpWatchDefault();
-  setStatus("Pripojovani...");
+  setStatus("Připojování...");
   s_requestConnect = true;
 }
 

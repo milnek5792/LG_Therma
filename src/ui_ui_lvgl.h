@@ -7,6 +7,10 @@
 void uiLvglInit();
 void uiLvglTick();
 
+/** Během Tab5 OTA — LVGL vypnutý, zobrazuje jen net_ota. */
+void uiLvglSetOtaLock(bool on);
+bool uiLvglIsOtaLocked(void);
+
 /** Během MQTT TLS — neflushovat (šetří SDIO/DMA pro Wi-Fi). */
 void uiLvglSetFrozen(bool frozen);
 bool uiLvglIsFrozen();

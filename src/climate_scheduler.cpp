@@ -23,26 +23,12 @@ bool isNightHour(int hour) {
 }
 
 void updatePlanText(int hour, int minute, bool tichyActive, bool autoMode) {
-  char line[96];
-  if (!uiEez.cas_platny) {
-    snprintf(line, sizeof(line),
-             "Tichy rezim T/C: noc %02d:00-%02d:00 (ceka NTP)",
-             CLIMATE_TICHY_NOC_START_H, CLIMATE_TICHY_NOC_END_H);
-  } else if (autoMode && !s_manualOverride) {
-    snprintf(line, sizeof(line),
-             "Tichy rezim T/C: %s | noc %02d:00-%02d:00 | dalsi zmena %02d:00",
-             tichyActive ? "ZAP" : "VYP",
-             CLIMATE_TICHY_NOC_START_H, CLIMATE_TICHY_NOC_END_H,
-             tichyActive ? CLIMATE_TICHY_NOC_END_H : CLIMATE_TICHY_NOC_START_H);
-  } else {
-    snprintf(line, sizeof(line),
-             "Tichy rezim T/C: %s | rucne (planovac pozdeji)",
-             tichyActive ? "ZAP" : "VYP");
-    (void)hour;
-    (void)minute;
-  }
-  strncpy(uiEez.plan_text, line, sizeof(uiEez.plan_text));
-  uiEez.plan_text[sizeof(uiEez.plan_text) - 1] = '\0';
+  (void)hour;
+  (void)minute;
+  (void)tichyActive;
+  (void)autoMode;
+  // Stav týdenního plánu vlastní climate_plan (plan_text / plan_title).
+  // Tichý režim je na tlačítku „Tichý režim“ — neprepisovat plan_text (blikání).
 }
 
 }  // namespace

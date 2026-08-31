@@ -1,5 +1,7 @@
 #include "ui_task_ui.h"
 
+#include "net_ota.h"
+
 #include "app_cmd.h"
 #include "bus_lg_config.h"
 #include "ui_bus_bindings.h"
@@ -80,7 +82,6 @@ static void lgTaskUi(void* param) {
 #if LG_USE_EEZ_LVGL
     uiLvglTick();
     uiNetSyncWifi();
-    uiPlanTick();
     uiRegulatorTick();
 #else
     if (drzetStavAktivni != predDrzetPanel || cekameNaOrigStart != predCekamePanel) {
@@ -108,6 +109,9 @@ void lgTaskUiSuspend(void) {
 }
 
 void lgTaskUiResume(void) {
+  if (netOtaIsBusy()) {
+    return;
+  }
   if (s_uiTask) {
     vTaskResume(s_uiTask);
     Serial.println("[UI] resume");

@@ -1,4 +1,4 @@
-// climate_regulator.cpp — ekviterm (35.73−0.515·Tout) + PI korekce + asym. Eco
+// climate_regulator.cpp — ekviterm (lineární −15/+15) + PI korekce + asym. Eco
 #include "climate_regulator.h"
 
 #include "climate_room.h"
@@ -23,9 +23,6 @@ constexpr uint32_t kBusRetryMs = 5000;
 constexpr float kOutMin = (float)REG_T_WATER_MIN_C;
 constexpr float kOutMax = (float)REG_T_WATER_MAX_C;
 constexpr float kFixedBaseC = 32.5f;
-
-constexpr float kEqA = 35.73f;
-constexpr float kEqB = 0.515f;
 
 RegulatorConfig s_cfg;
 float s_planRoomOffset = 0.0f;
@@ -99,8 +96,28 @@ float currentOutputWaterC(void) {
   return kFixedBaseC;
 }
 
+float equithermWaterFromCfg(float outdoorC, const RegulatorConfig* cfg) {
+  if (!cfg) {
+    return kFixedBaseC;
+  }
+  const float tCold = cfg->t_water_cold_c;
+  const float tWarm = cfg->t_water_warm_c;
+  const float outCold = REG_EQ_OUT_COLD_C;
+  const float outWarm = REG_EQ_OUT_WARM_C;
+  float t;
+  if (outdoorC <= outCold) {
+    t = tCold;
+  } else if (outdoorC >= outWarm) {
+    t = tWarm;
+  } else {
+    const float f = (outdoorC - outCold) / (outWarm - outCold);
+    t = tCold + f * (tWarm - tCold);
+  }
+  return t + cfg->offset_c;
+}
+
 float computeEqBase(float outdoorC) {
-  return kEqA - kEqB * outdoorC;
+  return equithermWaterFromCfg(outdoorC, &s_cfg);
 }
 
 float resolveBase(bool outOk, float outC) {
@@ -189,7 +206,8 @@ void retryUnconfirmedSp(uint32_t now) {
 }
 
 void migrateToEquithermGains(void) {
-  if (s_cfg.kp < 8.0f) {
+  // Starý PID na vodu měl Kp ~12.5; nový ekviterm+PI používá Kp≈4.
+  if (s_cfg.kp < 12.0f) {
     return;
   }
   ESP_LOGW(TAG, "NVS Kp=%.1f (stary PID vody) — Kp=4 Ki=0.1 + ekviterm",
@@ -208,14 +226,12 @@ void climateRegulatorSetDefaults(RegulatorConfig* cfg) {
     return;
   }
   cfg->room_sp_c = 22.0f;
-  cfg->t_out_cold_c = -18.0f;
-  cfg->u_cold_pct = 100.0f;
-  cfg->t_out_warm_c = 15.0f;
-  cfg->u_warm_pct = 0.0f;
+  cfg->t_water_cold_c = REG_EQ_WATER_COLD_DEFAULT_C;
+  cfg->t_water_warm_c = REG_EQ_WATER_WARM_DEFAULT_C;
+  cfg->offset_c = 0.0f;
   cfg->kp = 4.0f;
   cfg->ki = 0.1f;
   cfg->kd = 0.0f;
-  cfg->bias_pct = 0.0f;
   cfg->trim_limit_pct = 25.0f;
   cfg->deadband_c = 0.2f;
   cfg->use_equitherm = 1;
@@ -224,6 +240,7 @@ void climateRegulatorSetDefaults(RegulatorConfig* cfg) {
 
 void climateRegulatorSetUseEquitherm(bool on) {
   s_cfg.use_equitherm = on ? 1 : 0;
+  climateRegulatorRequestSave();
   ESP_LOGI(TAG, "use_equitherm=%d", (int)s_cfg.use_equitherm);
 }
 
@@ -231,19 +248,34 @@ bool climateRegulatorUseEquitherm(void) { return s_cfg.use_equitherm != 0; }
 
 bool climateRegulatorIsEcoMode(void) { return s_eco; }
 
+float climateRegulatorEquithermWaterAt(float outdoorC) {
+  return equithermWaterFromCfg(outdoorC, &s_cfg);
+}
+
 void climateRegulatorInit(void) {
   climateRegulatorSetDefaults(&s_cfg);
   if (!storageLoadRegulatorConfig(&s_cfg)) {
+    ESP_LOGW(TAG, "NVS reg_cfg chybi — vychozi gainy");
     climateRegulatorSetDefaults(&s_cfg);
     climateRegulatorSave();
   } else {
+    ESP_LOGI(TAG,
+             "NVS reg_cfg OK Kp=%.1f Ki=%.2f Kd=%.1f voda %.0f/%.0f offset=%+.0f",
+             (double)s_cfg.kp, (double)s_cfg.ki, (double)s_cfg.kd,
+             (double)s_cfg.t_water_cold_c, (double)s_cfg.t_water_warm_c,
+             (double)s_cfg.offset_c);
     migrateToEquithermGains();
   }
   s_cfg.room_sp_c = clampf(s_cfg.room_sp_c, 18.0f, 24.0f);
+  s_cfg.t_water_cold_c =
+      clampf(s_cfg.t_water_cold_c, kOutMin, kOutMax);
+  s_cfg.t_water_warm_c =
+      clampf(s_cfg.t_water_warm_c, kOutMin, kOutMax);
+  s_cfg.offset_c =
+      clampf(s_cfg.offset_c, REG_EQ_OFFSET_MIN_C, REG_EQ_OFFSET_MAX_C);
   s_cfg.kp = clampf(s_cfg.kp, 0.0f, 20.0f);
   s_cfg.ki = clampf(s_cfg.ki, 0.0f, 5.0f);
   s_cfg.kd = clampf(s_cfg.kd, 0.0f, 20.0f);
-  s_cfg.bias_pct = clampf(s_cfg.bias_pct, -25.0f, 25.0f);
   s_cfg.use_equitherm = s_cfg.use_equitherm ? 1 : 0;
   s_planRoomOffset = 0.0f;
   s_planStop = false;
@@ -264,6 +296,8 @@ void climateRegulatorInit(void) {
 void climateRegulatorSave(void) {
   storageSaveRegulatorConfig(&s_cfg);
   s_cfgSavePending = false;
+  ESP_LOGI(TAG, "NVS reg_cfg ulozeno Kp=%.1f Ki=%.2f", (double)s_cfg.kp,
+           (double)s_cfg.ki);
 }
 
 void climateRegulatorRequestSave(void) {

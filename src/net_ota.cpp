@@ -8,6 +8,7 @@
 #include "net_wifi_mgr.h"
 #include "ui_display_bus.h"
 #include "ui_task_ui.h"
+#include "ui_ui_lvgl.h"
 
 #include <Arduino.h>
 #include <ArduinoOTA.h>
@@ -19,15 +20,15 @@ namespace {
 
 bool s_started = false;
 bool s_busy = false;
-bool s_screenReady = false;
+bool s_uiSuspended = false;
 int s_lastPct = -1;
 uint32_t s_lastProgressDrawMs = 0;
 
-constexpr int kProgressStepPct = 5;
-constexpr uint32_t kProgressMinIntervalMs = 400;
+constexpr int kProgressStepPct = 2;
+constexpr uint32_t kProgressMinIntervalMs = 250;
 
-void paintStatus(const char* line1, const char* line2, bool fullClear) {
-  if (!uiDisplayBusLock(pdMS_TO_TICKS(300))) {
+void paintOtaScreen(const char* line1, const char* line2) {
+  if (!uiDisplayBusLock(pdMS_TO_TICKS(500))) {
     Serial.printf("[OTA] %s %s\n", line1 ? line1 : "", line2 ? line2 : "");
     return;
   }
@@ -35,22 +36,8 @@ void paintStatus(const char* line1, const char* line2, bool fullClear) {
   auto& d = M5.Display;
   const int cx = d.width() / 2;
   const int cy = d.height() / 2;
-  // Pásy textu — bez fillScreen při progressu (blikání panelu).
-  constexpr int kBandW = 720;
-  constexpr int kBand1H = 72;
-  constexpr int kBand2H = 48;
-  const int bandX = cx - kBandW / 2;
-  const int band1Y = cy - 72;
-  const int band2Y = cy + 8;
 
-  if (fullClear || !s_screenReady) {
-    d.fillScreen(TFT_BLACK);
-    s_screenReady = true;
-  } else {
-    d.fillRect(bandX, band1Y, kBandW, kBand1H, TFT_BLACK);
-    d.fillRect(bandX, band2Y, kBandW, kBand2H, TFT_BLACK);
-  }
-
+  d.fillScreen(TFT_BLACK);
   d.setTextDatum(middle_center);
   d.setTextColor(TFT_WHITE, TFT_BLACK);
   d.setTextSize(3);
@@ -68,22 +55,42 @@ void paintStatus(const char* line1, const char* line2, bool fullClear) {
   Serial.printf("[OTA] %s | %s\n", line1 ? line1 : "", line2 ? line2 : "");
 }
 
+void enterOtaUiMode(void) {
+  s_busy = true;
+  s_lastPct = -1;
+  s_lastProgressDrawMs = 0;
+  uiLvglSetOtaLock(true);
+  netMqttSetEnabled(false);
+  netSdioSetTlsBusy(true);
+  if (!s_uiSuspended) {
+    lgTaskUiSuspend();
+    s_uiSuspended = true;
+  }
+  vTaskDelay(pdMS_TO_TICKS(120));
+  paintOtaScreen("OTA upload", APP_FW_VERSION);
+}
+
+void leaveOtaUiMode(bool resumeUi) {
+  uiLvglSetOtaLock(false);
+  s_busy = false;
+  s_lastPct = -1;
+  s_lastProgressDrawMs = 0;
+  netSdioSetTlsBusy(false);
+  netSdioClearUiFreeze();
+  if (resumeUi && s_uiSuspended) {
+    lgTaskUiResume();
+    s_uiSuspended = false;
+  }
+}
+
 void setupCallbacks() {
   ArduinoOTA.onStart([]() {
-    s_busy = true;
-    s_screenReady = false;
-    s_lastPct = -1;
-    s_lastProgressDrawMs = 0;
     Serial.println("[OTA] start (PlatformIO espota)");
-    netMqttSetEnabled(false);
-    netSdioSetTlsBusy(true);
-    lgTaskUiSuspend();
-    delay(100);
-    paintStatus("OTA upload", APP_FW_VERSION, true);
+    enterOtaUiMode();
   });
 
   ArduinoOTA.onEnd([]() {
-    paintStatus("OTA HOTOVO", "restart...", true);
+    paintOtaScreen("OTA HOTOVO", "restart...");
     delay(800);
   });
 
@@ -112,18 +119,15 @@ void setupCallbacks() {
     snprintf(l2, sizeof(l2), "%u / %u KB", progress / 1024, total / 1024);
     char l1[32];
     snprintf(l1, sizeof(l1), "OTA %d %%", pct);
-    paintStatus(l1, l2, false);
+    paintOtaScreen(l1, l2);
   });
 
   ArduinoOTA.onError([](ota_error_t err) {
     char msg[32];
     snprintf(msg, sizeof(msg), "err %u", (unsigned)err);
-    paintStatus("OTA SELHALO", msg, true);
-    s_busy = false;
-    s_screenReady = false;
-    netSdioSetTlsBusy(false);
-    netSdioClearUiFreeze();
-    lgTaskUiResume();
+    paintOtaScreen("OTA SELHALO", msg);
+    delay(1200);
+    leaveOtaUiMode(true);
     netMqttSetEnabled(true);
     netMqttConnect();
   });

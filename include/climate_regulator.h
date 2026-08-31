@@ -22,19 +22,30 @@ extern "C" {
 /** Asymetrické Eco: vstup při SP+hyst, návrat při ≤ SP. */
 #define REG_ECO_HYST_C (0.3f)
 
+/** Pevné venkovní body ekvitermní křivky [°C]. */
+#define REG_EQ_OUT_COLD_C (-15.0f)
+#define REG_EQ_OUT_WARM_C (15.0f)
+/** Posun celé křivky [°C]. */
+#define REG_EQ_OFFSET_MIN_C (-5.0f)
+#define REG_EQ_OFFSET_MAX_C (5.0f)
+/** Výchozí SP vody na pevných venkovních bodech (35.73−0.515·Tout). */
+#define REG_EQ_WATER_COLD_DEFAULT_C (43.5f)
+#define REG_EQ_WATER_WARM_DEFAULT_C (28.0f)
+
 struct RegulatorConfig {
   float room_sp_c;       // default 22
-  float t_out_cold_c;    // NVS legacy — křivka teď pevná -18/45
-  float u_cold_pct;      // NVS legacy
-  float t_out_warm_c;    // NVS legacy
-  float u_warm_pct;      // NVS legacy
+  /** SP vody při venku REG_EQ_OUT_COLD_C (−15 °C). */
+  float t_water_cold_c;
+  /** SP vody při venku REG_EQ_OUT_WARM_C (+15 °C). */
+  float t_water_warm_c;
+  /** Posun celé ekvitermní křivky ±5 °C. */
+  float offset_c;
   /** Kp: °C korekce / °C pokoje (default 4). */
   float kp;
   /** Ki: °C korekce / (°C · perioda 120 s) (default 0.1). */
   float ki;
   /** Kd: obvykle 0. */
   float kd;
-  float bias_pct;        // NVS legacy — nepoužito
   float trim_limit_pct;  // legacy
   float deadband_c;      // legacy
   /** 1 = ekvitermní základ; 0 = fixní střed 32.5 °C + PI. */
@@ -85,6 +96,8 @@ void climateRegulatorSetDefaults(RegulatorConfig* cfg);
 void climateRegulatorSetUseEquitherm(bool on);
 bool climateRegulatorUseEquitherm(void);
 bool climateRegulatorIsEcoMode(void);
+/** Ekvitermní SP vody pro danou venkovní teplotu (včetně offset_c). */
+float climateRegulatorEquithermWaterAt(float outdoorC);
 
 void climateRegulatorGetSnapshot(RegulatorSnapshot* out);
 void climateRegulatorAdjustRoomSp(float deltaC);

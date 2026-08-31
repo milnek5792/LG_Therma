@@ -32,14 +32,14 @@ constexpr uint32_t kColRed = 0xFF453Au;
 constexpr int kW = BOARD_PANEL_W;
 constexpr int kH = BOARD_PANEL_H;
 constexpr int kMargin = 8;
-constexpr int kHeaderH = 56;
-constexpr int kBtnH = 48;
+constexpr int kHeaderH = 64;
+constexpr int kBtnH = 54;
 constexpr int kPad = 8;
 constexpr int kDenW = 72;
 constexpr int kColGap = 6;
 constexpr int kMinUtlumStupne = 1;
 constexpr int kMaxUtlumStupne = 5;
-constexpr int kTimeRowH = 80;
+constexpr int kTimeRowH = 92;
 constexpr int kCasNameW = 48;
 constexpr int kCasColX = kCasNameW + 6;
 constexpr int kTableTop = kHeaderH + kTimeRowH + 8;
@@ -236,9 +236,12 @@ void refreshBunka(uint8_t den, uint8_t obdobi) {
   if (lbl) {
     setLabelIfChanged(lbl, txt);
   }
-  lv_obj_set_style_bg_color(btn, lv_color_hex(barvaBunky(bunka->akce)),
-                            LV_PART_MAIN | LV_STATE_DEFAULT);
-  lv_obj_invalidate(btn);
+  const uint32_t col = barvaBunky(bunka->akce);
+  static uint32_t s_cellBg[PLAN_POCET_DNU][PLAN_POCET_OBDOBI] = {};
+  if (s_cellBg[den][obdobi] != col) {
+    s_cellBg[den][obdobi] = col;
+    lv_obj_set_style_bg_color(btn, lv_color_hex(col), LV_PART_MAIN | LV_STATE_DEFAULT);
+  }
 }
 
 void refreshCasKarta(uint8_t obdobi) {
@@ -250,12 +253,11 @@ void refreshCasKarta(uint8_t obdobi) {
   char odLine[16];
   char delLine[20];
   const PlanObdobiCas* ob = &g_planConfig.obdobi[obdobi];
-  const int delka = delkaObdobiMin(ob);
   snprintf(nameLine, sizeof(nameLine), "%s", climatePlanObdobiNazev(obdobi));
   snprintf(odLine, sizeof(odLine), "Od %02u:%02u",
            (unsigned)ob->zacatek.hodina, (unsigned)ob->zacatek.minuta);
-  snprintf(delLine, sizeof(delLine), "delka %u:%02u",
-           (unsigned)(delka / 60), (unsigned)(delka % 60));
+  snprintf(delLine, sizeof(delLine), "Do %02u:%02u",
+           (unsigned)ob->konec.hodina, (unsigned)ob->konec.minuta);
 
   lv_obj_t* lbl0 = lv_obj_get_child(btn, 0);
   lv_obj_t* lbl1 = lv_obj_get_child(btn, 1);
@@ -269,7 +271,6 @@ void refreshCasKarta(uint8_t obdobi) {
   if (lbl2) {
     setLabelIfChanged(lbl2, delLine);
   }
-  lv_obj_invalidate(btn);
 }
 
 void refreshModalLabels(void) {
@@ -278,9 +279,10 @@ void refreshModalLabels(void) {
   }
   const PlanObdobiCas* ob = &g_planConfig.obdobi[static_cast<uint8_t>(s_modalObdobi)];
   const int delka = delkaObdobiMin(ob);
+  (void)delka;
 
   char title[28];
-  snprintf(title, sizeof(title), "%s - cas obdobi",
+  snprintf(title, sizeof(title), "%s - čas období",
            climatePlanObdobiNazev(static_cast<uint8_t>(s_modalObdobi)));
   setLabelIfChanged(planObj.modal_title, title);
 
@@ -290,7 +292,7 @@ void refreshModalLabels(void) {
   setLabelIfChanged(planObj.modal_lbl_od, odLine);
 
   char delLine[16];
-  snprintf(delLine, sizeof(delLine), "Delka  %u:%02u",
+  snprintf(delLine, sizeof(delLine), "Délka  %u:%02u",
            (unsigned)(delka / 60), (unsigned)(delka % 60));
   setLabelIfChanged(planObj.modal_lbl_delka, delLine);
 
@@ -376,11 +378,18 @@ void styleToggleBtn(lv_obj_t* btn, bool on) {
   if (!btn) {
     return;
   }
+  static bool s_lastOn = false;
+  static bool s_hasLast = false;
+  if (s_hasLast && s_lastOn == on) {
+    return;
+  }
+  s_hasLast = true;
+  s_lastOn = on;
   lv_obj_set_style_bg_color(
       btn, lv_color_hex(on ? 0x30D158u : 0x48484Au), LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_t* lbl = lv_obj_get_child(btn, 0);
   if (lbl) {
-    setLabelIfChanged(lbl, on ? "Aktivni" : "Neaktivni");
+    setLabelIfChanged(lbl, on ? "Aktivní" : "Neaktivní");
   }
 }
 
@@ -422,7 +431,7 @@ lv_obj_t* makeCasKarta(lv_obj_t* parent, int x, int y, int w, int h, uint8_t obd
   lv_obj_t* lblDel = lv_label_create(btn);
   lv_obj_set_style_text_font(lblDel, kFont, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_color(lblDel, lv_color_hex(kColMuted), LV_PART_MAIN | LV_STATE_DEFAULT);
-  lv_label_set_text(lblDel, "delka --:--");
+  lv_label_set_text(lblDel, "Do --:--");
   lv_obj_set_pos(lblDel, kCasColX, 40);
   lv_obj_set_width(lblDel, w - kCasColX - 4);
   lv_obj_set_style_text_align(lblDel, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -461,7 +470,7 @@ void createModal(void) {
   lv_obj_set_style_text_font(planObj.modal_title, kFont, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_color(planObj.modal_title, lv_color_hex(kColOrange), LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_align(planObj.modal_title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-  lv_label_set_text(planObj.modal_title, "Cas obdobi");
+  lv_label_set_text(planObj.modal_title, "Čas období");
 
   planObj.modal_lbl_od = lv_label_create(planObj.modal_panel);
   lv_obj_set_pos(planObj.modal_lbl_od, kPad, 50);
@@ -487,7 +496,7 @@ void createModal(void) {
   lv_obj_set_style_text_font(planObj.modal_lbl_delka, kFont, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_color(planObj.modal_lbl_delka, lv_color_hex(kColText), LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_align(planObj.modal_lbl_delka, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-  lv_label_set_text(planObj.modal_lbl_delka, "Delka  --:--");
+  lv_label_set_text(planObj.modal_lbl_delka, "Délka  --:--");
 
   lv_obj_t* lblHint = lv_label_create(planObj.modal_panel);
   s_modalHint = lblHint;
@@ -569,6 +578,7 @@ void uiPlanOpenModal(uint8_t obdobi) {
 }
 
 void uiPlanRefreshAll(void) {
+  styleToggleBtn(planObj.btn_toggle, g_planConfig.aktivni);
   for (uint8_t o = 0; o < PLAN_POCET_OBDOBI; ++o) {
     refreshCasKarta(o);
   }
@@ -577,7 +587,6 @@ void uiPlanRefreshAll(void) {
       refreshBunka(d, o);
     }
   }
-  styleToggleBtn(planObj.btn_toggle, g_planConfig.aktivni);
   if (s_modalObdobi >= 0) {
     refreshModalLabels();
   }
@@ -599,10 +608,10 @@ void uiPlanCreate(void) {
   lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
   planObj.btn_back = makeButton(
-      scr, kMargin, 4, 120, kBtnH, "<- ZPET", action_akce_plan_back, nullptr, 0x48484Fu);
+      scr, kMargin, 4, 120, kBtnH, "<- ZPĚT", action_akce_plan_back, nullptr, 0x48484Fu);
 
   planObj.lbl_title = lv_label_create(scr);
-  lv_label_set_text(planObj.lbl_title, "CASOVY PLAN");
+  lv_label_set_text(planObj.lbl_title, "ČASOVÝ PLÁN");
   lv_obj_set_style_text_font(planObj.lbl_title, kFont, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_color(planObj.lbl_title, lv_color_hex(kColText), LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_align(planObj.lbl_title, LV_ALIGN_TOP_MID, 0, 12);
@@ -611,7 +620,7 @@ void uiPlanCreate(void) {
   const int toggleW = 160;
   planObj.btn_toggle = makeButton(
       scr, kW - kMargin - toggleW, 4, toggleW, kBtnH,
-      "Neaktivni", action_akce_plan_toggle, nullptr, kColPurple);
+      "Neaktivní", action_akce_plan_toggle, nullptr, kColPurple);
 
   const int tableW = kW - 2 * kMargin;
   const int colW = (tableW - kDenW - PLAN_POCET_OBDOBI * kColGap) / PLAN_POCET_OBDOBI;
@@ -622,7 +631,7 @@ void uiPlanCreate(void) {
   lv_obj_set_pos(planObj.lbl_col_den, kPad, (kTimeRowH - 28) / 2);
   lv_obj_set_style_text_font(planObj.lbl_col_den, kFont, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_color(planObj.lbl_col_den, lv_color_hex(kColMuted), LV_PART_MAIN | LV_STATE_DEFAULT);
-  lv_label_set_text(planObj.lbl_col_den, "Cas");
+  lv_label_set_text(planObj.lbl_col_den, "Čas");
 
   for (uint8_t o = 0; o < PLAN_POCET_OBDOBI; ++o) {
     s_obdobiRefs[o] = {o};
@@ -671,10 +680,7 @@ void uiPlanEnsureCreated(void) {
 }
 
 void uiPlanTick(void) {
-  if (!s_planCreated) {
-    return;
-  }
-  styleToggleBtn(planObj.btn_toggle, g_planConfig.aktivni);
+  (void)s_planCreated;
 }
 
 void uiPlanOnLeave(void) {

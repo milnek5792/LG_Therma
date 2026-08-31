@@ -106,7 +106,7 @@ void syncRtcFromSystemUtc() {
 
 void startSntp() {
   if (!netWifiIsConnected()) {
-    setStatus("Ceka na Wi-Fi");
+    setStatus("Čeká na Wi-Fi");
     return;
   }
 
@@ -130,7 +130,7 @@ void netNtpInit() {
 
 void netNtpRequestSync() {
   if (!netWifiIsConnected()) {
-    setStatus("Ceka na Wi-Fi");
+    setStatus("Čeká na Wi-Fi");
     return;
   }
   startSntp();
@@ -156,7 +156,7 @@ void netNtpTick() {
       syncRtcFromSystemUtc();
       s_phase = NtpPhase::kSynced;
       s_lastResyncMs = millis();
-      setStatus("Cas synchronizovan");
+      setStatus("Čas synchronizován");
       pushTimeToUi(true);
       Serial.println("[NTP] synchronizace OK");
     } else if (millis() - s_waitStartedMs >= kNtpTimeoutMs) {

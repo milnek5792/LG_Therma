@@ -33,6 +33,9 @@ typedef struct {
   lv_obj_t* btn_cold_p;
   lv_obj_t* btn_warm_m;
   lv_obj_t* btn_warm_p;
+  lv_obj_t* lbl_val_bias;
+  lv_obj_t* lbl_val_cold;
+  lv_obj_t* lbl_val_warm;
 } regulator_objects_t;
 
 extern regulator_objects_t regulatorObj;

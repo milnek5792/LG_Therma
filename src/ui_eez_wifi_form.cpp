@@ -137,16 +137,16 @@ void uiWifiFormCreate() {
   lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
   wifiFormObj.btn_back = makeActionButton(
-      scr, 40, 16, 220, 52, "<- ZPET", onBack, 0x48484Fu);
+      scr, 40, 16, 220, 52, "<- ZPĚT", onBack, 0x48484Fu);
 
   wifiFormObj.lbl_title = lv_label_create(scr);
-  lv_label_set_text(wifiFormObj.lbl_title, "Wi-Fi sit");
+  lv_label_set_text(wifiFormObj.lbl_title, "Wi-Fi síť");
   lv_obj_set_style_text_font(wifiFormObj.lbl_title, kFontTitle, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_text_color(wifiFormObj.lbl_title, lv_color_hex(kColText), LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_align(wifiFormObj.lbl_title, LV_ALIGN_TOP_MID, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_y(wifiFormObj.lbl_title, 24);
 
-  wifiFormObj.lbl_ssid = makeLabel(scr, 40, 88, "SSID site");
+  wifiFormObj.lbl_ssid = makeLabel(scr, 40, 88, "SSID sítě");
   wifiFormObj.ta_ssid = lv_textarea_create(scr);
   lv_obj_set_pos(wifiFormObj.ta_ssid, 40, 120);
   lv_obj_set_size(wifiFormObj.ta_ssid, 1200, 52);
@@ -163,9 +163,9 @@ void uiWifiFormCreate() {
   styleField(wifiFormObj.ta_pass);
 
   wifiFormObj.btn_save = makeActionButton(
-      scr, 40, 288, 300, 52, "Ulozit", onSave, 0x48484Fu);
+      scr, 40, 288, 300, 52, "Uložit", onSave, 0x48484Fu);
   wifiFormObj.btn_connect = makeActionButton(
-      scr, 360, 288, 360, 52, "Ulozit a pripojit", onConnect, kColGreen);
+      scr, 360, 288, 360, 52, "Uložit a připojit", onConnect, kColGreen);
 
   wifiFormObj.keyboard = lv_keyboard_create(scr);
   lv_obj_set_size(wifiFormObj.keyboard, 1280, 360);

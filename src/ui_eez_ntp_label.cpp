@@ -67,6 +67,10 @@ void uiEezNtpLabelTick(void) {
     s_lastText[sizeof(s_lastText) - 1] = '\0';
   }
 
-  lv_obj_set_style_text_color(
-      s_lblNtp, lv_color_hex(color), LV_PART_MAIN | LV_STATE_DEFAULT);
+  static uint32_t s_lastColor = 0xFFFFFFFFu;
+  if (s_lastColor != color) {
+    s_lastColor = color;
+    lv_obj_set_style_text_color(
+        s_lblNtp, lv_color_hex(color), LV_PART_MAIN | LV_STATE_DEFAULT);
+  }
 }

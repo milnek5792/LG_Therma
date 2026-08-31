@@ -15,7 +15,7 @@ PlanTydenConfig g_planConfig;
 
 namespace {
 
-const char* kDny[] = {"Po", "Ut", "St", "Ct", "Pa", "So", "Ne"};
+const char* kDny[] = {"Po", "Út", "St", "Čt", "Pá", "So", "Ne"};
 const char* kObdobi[] = {"VT1", "VT2", "VT3", "VT4", "Noc"};
 
 int s_aplikovaneObdobi = -1;
@@ -149,34 +149,32 @@ void aplikujAkci(PlanAkce akce, uint8_t utlumStupne) {
 
 void aktualizujMonitoring(int aktivniObdobi, PlanAkce akce, uint8_t utlumStupne) {
   if (!g_planConfig.aktivni) {
-    snprintf(uiEez.plan_title, sizeof(uiEez.plan_title), "PLAN VYPNUTY");
-    snprintf(uiEez.plan_text, sizeof(uiEez.plan_text), "Casovy plan je neaktivni");
-    uiEez.sig_utlum = false;
+    snprintf(uiEez.plan_title, sizeof(uiEez.plan_title), "PLÁN VYPNUTÝ");
+    snprintf(uiEez.plan_text, sizeof(uiEez.plan_text), "Časový plán je neaktivní");
     return;
   }
 
   if (aktivniObdobi < 0) {
-    snprintf(uiEez.plan_title, sizeof(uiEez.plan_title), "TYDENNI PLAN AKTIVNI");
-    snprintf(uiEez.plan_text, sizeof(uiEez.plan_text), "Bezny rezim - mimo planovana obdobi");
-    uiEez.sig_utlum = false;
+    snprintf(uiEez.plan_title, sizeof(uiEez.plan_title), "TÝDENNÍ PLÁN AKTIVNÍ");
+    snprintf(uiEez.plan_text, sizeof(uiEez.plan_text), "Běžný režim - mimo plánovaná období");
     return;
   }
 
   const char* obNazev = climatePlanObdobiNazev(static_cast<uint8_t>(aktivniObdobi));
 
   if (akce == PLAN_AKCE_UTLUM) {
-    snprintf(uiEez.plan_title, sizeof(uiEez.plan_title), "UTLUM AKTIVNI");
+    snprintf(uiEez.plan_title, sizeof(uiEez.plan_title), "ÚTLUM AKTIVNÍ");
     uiEez.sig_utlum = true;
-    snprintf(uiEez.plan_text, sizeof(uiEez.plan_text), "%s: utlum -%u st",
+    snprintf(uiEez.plan_text, sizeof(uiEez.plan_text), "%s: útlum -%u st",
              obNazev, (unsigned)utlumStupne);
   } else if (akce == PLAN_AKCE_VYP) {
-    snprintf(uiEez.plan_title, sizeof(uiEez.plan_title), "TOPENI VYPNUTO");
+    snprintf(uiEez.plan_title, sizeof(uiEez.plan_title), "TOPENÍ VYPNUTO");
     uiEez.sig_utlum = false;
-    snprintf(uiEez.plan_text, sizeof(uiEez.plan_text), "%s: topeni vypnuto", obNazev);
+    snprintf(uiEez.plan_text, sizeof(uiEez.plan_text), "%s: topení vypnuto", obNazev);
   } else {
-    snprintf(uiEez.plan_title, sizeof(uiEez.plan_title), "TYDENNI PLAN AKTIVNI");
+    snprintf(uiEez.plan_title, sizeof(uiEez.plan_title), "TÝDENNÍ PLÁN AKTIVNÍ");
     uiEez.sig_utlum = false;
-    snprintf(uiEez.plan_text, sizeof(uiEez.plan_text), "%s: bezny rezim", obNazev);
+    snprintf(uiEez.plan_text, sizeof(uiEez.plan_text), "%s: běžný režim", obNazev);
   }
 }
 

@@ -37,10 +37,10 @@ constexpr int kDebounceMs = 250;
 constexpr int kHitPad = 12;
 constexpr int kMaxDriftPx = 55;
 
-// MAIN: pevná EEZ mapa (LVGL indev vypnutý kvůli SDIO). Bez tichého režimu nahoře.
+// MAIN: custom hit-test (LVGL indev vypnutý kvůli SDIO).
 constexpr TouchBtn kMainButtons[] = {
-    {107, 151, 100, 100, "minus", action_akce_teplota_minus},
-    {488, 152, 100, 100, "plus", action_akce_teplota_plus},
+    {48, 120, 128, 128, "minus", action_akce_teplota_minus},
+    {608, 120, 128, 128, "plus", action_akce_teplota_plus},
     {865, 90, 195, 60, "start", action_akce_start_stop},
     {1070, 90, 195, 60, "stop", action_akce_start_stop},
     {1024, 600, 256, 120, "menu", action_akce_menu},
@@ -172,9 +172,24 @@ lv_obj_t* hitTestDynamic(int tx, int ty) {
   return nullptr;
 }
 
+lv_obj_t* mainButtonObject(int idx) {
+  switch (idx) {
+    case 0: return objects.btn_minus;
+    case 1: return objects.btn_plus;
+    case 2: return objects.btn_run;
+    case 3: return objects.btn_stop;
+    case 4: return objects.btn_menu;
+    default: return nullptr;
+  }
+}
+
 int buttonIndexMain(int tx, int ty) {
   const int count = (int)(sizeof(kMainButtons) / sizeof(kMainButtons[0]));
-  for (int i = 0; i < count; ++i) {
+  for (int i = count - 1; i >= 0; --i) {
+    lv_obj_t* obj = mainButtonObject(i);
+    if (obj && pointInObj(obj, tx, ty)) {
+      return i;
+    }
     if (inRect(tx, ty, kMainButtons[i])) {
       return i;
     }
@@ -188,17 +203,6 @@ int buttonIndexMainAt(int tx, int ty, int baseX, int baseY) {
     return idx;
   }
   return buttonIndexMain(baseX, baseY);
-}
-
-lv_obj_t* mainButtonObject(int idx) {
-  switch (idx) {
-    case 0: return objects.btn_minus;
-    case 1: return objects.btn_plus;
-    case 2: return objects.btn_run;
-    case 3: return objects.btn_stop;
-    case 4: return objects.btn_menu;
-    default: return nullptr;
-  }
 }
 
 void setPhase(TouchPhase phase, int x, int y, int8_t btnIdx) {
@@ -226,6 +230,19 @@ bool readTouchPressed(int& x, int& y, int& baseX, int& baseY) {
 bool touchReleaseValidMain(int8_t btnIdx, int releaseX, int releaseY) {
   if (btnIdx < 0 || btnIdx >= (int)(sizeof(kMainButtons) / sizeof(kMainButtons[0]))) {
     return false;
+  }
+  lv_obj_t* obj = mainButtonObject(btnIdx);
+  if (obj) {
+    const bool downInBtn =
+        pointInObj(obj, s_downX, s_downY) || pointInObj(obj, s_downBaseX, s_downBaseY);
+    const bool relInBtn = pointInObj(obj, releaseX, releaseY);
+    if (downInBtn || relInBtn) {
+      if (abs(releaseX - s_downX) > kMaxDriftPx
+          || abs(releaseY - s_downY) > kMaxDriftPx) {
+        return false;
+      }
+      return true;
+    }
   }
   const TouchBtn& btn = kMainButtons[btnIdx];
   const bool downInBtn =

@@ -7,8 +7,10 @@
 #include "ui_touch_tab5.h"
 #include "ui_eez_signal_leds.h"
 #include "ui_eez_ntp_label.h"
+#include "ui_eez_porucha.h"
 #include "ui_display_sleep.h"
 #include "net_sdio_arbiter.h"
+#include "net_ota.h"
 #include <M5Unified.h>
 #include <Arduino.h>
 #include <esp_heap_caps.h>
@@ -24,6 +26,7 @@ static size_t s_drawBufBytes = 0;
 static uint32_t s_lastTickMs = 0;
 static uint32_t s_flushCount = 0;
 static volatile bool s_initDone = false;
+static volatile bool s_otaLock = false;
 static volatile bool s_frozen = false;
 static volatile bool s_sdioLight = false;
 static volatile bool s_fullPaint = false;
@@ -65,6 +68,10 @@ static void lvglPump(uint32_t ms) {
 }
 
 static void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* pxMap) {
+  if (s_otaLock || netOtaIsBusy()) {
+    lv_display_flush_ready(disp);
+    return;
+  }
   // Freeze: nic na panel — ALE nesmíme zahodit dirty bez invalidate po unfreeze
   // (viz uiLvglSetFrozen). Během freeze nevolat push*.
   if (s_frozen) {
@@ -153,6 +160,7 @@ void uiLvglInit() {
   ui_init();
   uiEezInitSignalLeds();
   uiEezNtpLabelInit();
+  uiEezPoruchaInit();
   uiTouchVisualInit();
   s_lastTickMs = millis();
 
@@ -171,6 +179,15 @@ void uiLvglInit() {
 }
 
 bool uiLvglInitDone() { return s_initDone; }
+
+void uiLvglSetOtaLock(bool on) {
+  s_otaLock = on;
+  if (on) {
+    Serial.println("[LVGL] OTA lock");
+  }
+}
+
+bool uiLvglIsOtaLocked(void) { return s_otaLock; }
 
 void uiLvglSetFrozen(bool frozen) {
   if (s_frozen == frozen) { return; }
@@ -217,6 +234,9 @@ int uiLvglHorRes() { return s_horRes; }
 int uiLvglVerRes() { return s_verRes; }
 
 void uiLvglTick() {
+  if (s_otaLock || netOtaIsBusy()) {
+    return;
+  }
   // TLS/MQTT: ani tick — žádný invalidate/flush na Core 1
   if (netSdioTlsBusy()) {
     return;
@@ -241,6 +261,7 @@ void uiLvglTick() {
     ui_tick();
     uiEezApplySignalLeds();
     uiEezNtpLabelTick();
+    uiEezPoruchaTick();
     uiApplyTichyRezimVisual();
     lv_obj_t* scr = lv_screen_active();
     if (scr) { lv_obj_invalidate(scr); }

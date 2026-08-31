@@ -2,6 +2,7 @@
 #include "climate_room_uart.h"
 
 #include "ble_config.h"
+#include "net_wifi_mgr.h"
 #include "storage_config_nvs.h"
 #include "ui_eez_model.h"
 
@@ -49,9 +50,14 @@ uint32_t s_macResyncAtMs = 0;
 char s_lastRoomRsp[kLineMax] = "";
 char s_lastOutRsp[kLineMax] = "";
 
+ClimateBridgeOtaState s_bridgeOtaState = CLIMATE_BRIDGE_OTA_IDLE;
+char s_bridgeOtaIp[20] = "";
+char s_bridgeOtaHost[40] = "";
+uint32_t s_bridgeOtaFailAtMs = 0;
+
 bool isZeroMac(const char* mac) {
   return !mac || mac[0] == '\0' || strcmp(mac, "00:00:00:00:00:00") == 0 ||
-         strcmp(mac, "—") == 0;
+         strcmp(mac, "---") == 0 || strcmp(mac, "—") == 0;
 }
 
 bool looksLikeMac(const char* mac) {
@@ -114,7 +120,7 @@ void formatSensorLineUnlocked(char* buf, size_t len, bool outdoor) {
   }
 
   if (!ok || t <= (UI_TEPLOTA_NEPLATNA + 1.0f)) {
-    strncpy(buf, "—", len - 1);
+    strncpy(buf, "---", len - 1);
     buf[len - 1] = '\0';
     return;
   }
@@ -262,6 +268,77 @@ void parseTelemetryFields(char* line, float* t, float* h, int* batt, int* rssi,
   }
 }
 
+void handleBridgeWifiLine(const char* line) {
+  if (!line) {
+    return;
+  }
+  if (strncmp(line, H2_PREFIX_WIFI, strlen(H2_PREFIX_WIFI)) == 0) {
+    const char* p = line + strlen(H2_PREFIX_WIFI);
+    if (strcmp(p, "CONNECTING") == 0) {
+      s_bridgeOtaState = CLIMATE_BRIDGE_OTA_CONNECTING;
+      s_bridgeOtaIp[0] = '\0';
+      s_bridgeOtaHost[0] = '\0';
+      Serial.println("[ROOM] bridge WiFi connecting");
+      return;
+    }
+    if (strncmp(p, "IP=", 3) == 0) {
+      strncpy(s_bridgeOtaIp, p + 3, sizeof(s_bridgeOtaIp) - 1);
+      s_bridgeOtaIp[sizeof(s_bridgeOtaIp) - 1] = '\0';
+      Serial.printf("[ROOM] bridge IP %s\n", s_bridgeOtaIp);
+      return;
+    }
+    if (strcmp(p, "OFF") == 0) {
+      s_bridgeOtaState = CLIMATE_BRIDGE_OTA_IDLE;
+      s_bridgeOtaIp[0] = '\0';
+      s_bridgeOtaHost[0] = '\0';
+      Serial.println("[ROOM] bridge WiFi off");
+      return;
+    }
+  }
+  if (strncmp(line, H2_PREFIX_OTA, strlen(H2_PREFIX_OTA)) == 0) {
+    const char* p = line + strlen(H2_PREFIX_OTA);
+    if (strncmp(p, "READY ", 6) == 0) {
+      s_bridgeOtaState = CLIMATE_BRIDGE_OTA_READY;
+      const char* host = strstr(p + 6, "host=");
+      const char* ip = strstr(p + 6, "ip=");
+      if (host) {
+        host += 5;
+        size_t i = 0;
+        while (host[i] && host[i] != ' ' && i + 1 < sizeof(s_bridgeOtaHost)) {
+          s_bridgeOtaHost[i] = host[i];
+          ++i;
+        }
+        s_bridgeOtaHost[i] = '\0';
+      }
+      if (ip) {
+        ip += 3;
+        size_t i = 0;
+        while (ip[i] && ip[i] != ' ' && i + 1 < sizeof(s_bridgeOtaIp)) {
+          s_bridgeOtaIp[i] = ip[i];
+          ++i;
+        }
+        s_bridgeOtaIp[i] = '\0';
+      }
+      Serial.printf("[ROOM] bridge OTA ready %s %s\n", s_bridgeOtaHost,
+                    s_bridgeOtaIp);
+      return;
+    }
+    if (strncmp(p, "DONE", 4) == 0) {
+      s_bridgeOtaState = CLIMATE_BRIDGE_OTA_IDLE;
+      Serial.println("[ROOM] bridge OTA done — reboot");
+      return;
+    }
+  }
+  if (strncmp(line, H2_PREFIX_ERR, strlen(H2_PREFIX_ERR)) == 0) {
+    const char* p = line + strlen(H2_PREFIX_ERR);
+    if (strncmp(p, "WIFI", 4) == 0) {
+      s_bridgeOtaState = CLIMATE_BRIDGE_OTA_FAIL;
+      s_bridgeOtaFailAtMs = millis() + 8000UL;
+      Serial.println("[ROOM] bridge WiFi fail");
+    }
+  }
+}
+
 void parseLine(char* line) {
   if (!line || !line[0]) {
     return;
@@ -279,6 +356,15 @@ void parseLine(char* line) {
   }
   if (strncmp(line, H2_PREFIX_CFG, strlen(H2_PREFIX_CFG)) == 0) {
     handleCfgLine(line);
+    return;
+  }
+  if (strncmp(line, H2_PREFIX_WIFI, strlen(H2_PREFIX_WIFI)) == 0 ||
+      strncmp(line, H2_PREFIX_OTA, strlen(H2_PREFIX_OTA)) == 0) {
+    handleBridgeWifiLine(line);
+    return;
+  }
+  if (strncmp(line, H2_PREFIX_ERR, strlen(H2_PREFIX_ERR)) == 0) {
+    handleBridgeWifiLine(line);
     return;
   }
 
@@ -541,7 +627,7 @@ void climateRoomGetConfiguredMac(char* buf, size_t len) {
     strncpy(buf, s_cfgMac, len - 1);
     buf[len - 1] = '\0';
   } else {
-    strncpy(buf, "—", len);
+    strncpy(buf, "---", len);
     buf[len - 1] = '\0';
   }
 }
@@ -557,7 +643,7 @@ void climateRoomGetConfiguredOutdoorMac(char* buf, size_t len) {
     strncpy(buf, s_cfgOutMac, len - 1);
     buf[len - 1] = '\0';
   } else {
-    strncpy(buf, "—", len);
+    strncpy(buf, "---", len);
     buf[len - 1] = '\0';
   }
 }
@@ -644,25 +730,89 @@ void climateRoomStatusText(char* buf, size_t buflen) {
   const bool roomOk = climateRoomIsOk();
   const bool outOk = climateRoomOutdoorIsOk();
   if (roomOk && outOk) {
-    snprintf(buf, buflen, "Pokoj %.1f C · Venku %.1f C", climateRoomTempC(),
-             climateRoomOutdoorTempC());
+    const int outBat = climateRoomOutdoorBatteryPct();
+    if (outBat >= 0) {
+      snprintf(buf, buflen, "Pokoj %.1f °C · Venku %.1f °C (bat %d%%)",
+               climateRoomTempC(), climateRoomOutdoorTempC(), outBat);
+    } else {
+      snprintf(buf, buflen, "Pokoj %.1f °C · Venku %.1f °C", climateRoomTempC(),
+               climateRoomOutdoorTempC());
+    }
     return;
   }
   if (roomOk) {
-    snprintf(buf, buflen, "H2 %.1f C · bat %d%% · rssi %d", climateRoomTempC(),
+    snprintf(buf, buflen, "H2 %.1f °C · bat %d%% · rssi %d", climateRoomTempC(),
              climateRoomBatteryPct(), climateRoomRssi());
     return;
   }
   if (outOk) {
-    snprintf(buf, buflen, "Venku %.1f C", climateRoomOutdoorTempC());
+    const int outBat = climateRoomOutdoorBatteryPct();
+    const int outRssi = climateRoomOutdoorRssi();
+    if (outBat >= 0) {
+      snprintf(buf, buflen, "Venku %.1f °C · bat %d%% · rssi %d",
+               climateRoomOutdoorTempC(), outBat, outRssi);
+    } else {
+      snprintf(buf, buflen, "Venku %.1f °C", climateRoomOutdoorTempC());
+    }
     return;
   }
   char mac[H2_MAC_STR_LEN];
   climateRoomGetConfiguredMac(mac, sizeof(mac));
   const int n = climateRoomFoundCount();
   if (n > 0) {
-    snprintf(buf, buflen, "Nalezeno %d — vyber Tepl.1-%d", n, n);
+    snprintf(buf, buflen, "Nalezeno %d - vyber Tepl.1-%d", n, n);
   } else {
-    snprintf(buf, buflen, "H2 MAC %s — klepni Skenuj", mac);
+    snprintf(buf, buflen, "H2 MAC %s - klepněte Skenuj", mac);
   }
 }
+
+bool climateRoomBridgeOtaStartWith(const char* ssid, const char* pass) {
+  if (!ssid || !ssid[0]) {
+    s_bridgeOtaState = CLIMATE_BRIDGE_OTA_FAIL;
+    s_bridgeOtaFailAtMs = millis() + 12000UL;
+    Serial.println("[ROOM] bridge OTA — chybi SSID");
+    return false;
+  }
+  char cmd[160];
+  snprintf(cmd, sizeof(cmd), "WIFI\t%s\t%s", ssid, pass ? pass : "");
+  sendCmd(cmd);
+  s_bridgeOtaState = CLIMATE_BRIDGE_OTA_CONNECTING;
+  s_bridgeOtaIp[0] = '\0';
+  s_bridgeOtaHost[0] = '\0';
+  Serial.printf("[ROOM] bridge OTA start ssid=%s\n", ssid);
+  return true;
+}
+
+void climateRoomBridgeOtaStart(void) {
+  char ssid[33];
+  char pass[65];
+  if (!netWifiCopyCredentials(ssid, sizeof(ssid), pass, sizeof(pass)) &&
+      (!storageLoadWifiCredentials(ssid, sizeof(ssid), pass, sizeof(pass)) ||
+       ssid[0] == '\0')) {
+    s_bridgeOtaState = CLIMATE_BRIDGE_OTA_FAIL;
+    s_bridgeOtaFailAtMs = millis() + 12000UL;
+    Serial.println("[ROOM] bridge OTA — chybi WiFi creds Tab5");
+    return;
+  }
+  climateRoomBridgeOtaStartWith(ssid, pass);
+}
+
+void climateRoomBridgeOtaStop(void) {
+  sendCmd(H2_CMD_WIFI_OFF);
+  s_bridgeOtaState = CLIMATE_BRIDGE_OTA_IDLE;
+  s_bridgeOtaIp[0] = '\0';
+  s_bridgeOtaHost[0] = '\0';
+}
+
+ClimateBridgeOtaState climateRoomBridgeOtaState(void) {
+  if (s_bridgeOtaState == CLIMATE_BRIDGE_OTA_FAIL && s_bridgeOtaFailAtMs != 0 &&
+      millis() >= s_bridgeOtaFailAtMs) {
+    s_bridgeOtaState = CLIMATE_BRIDGE_OTA_IDLE;
+    s_bridgeOtaFailAtMs = 0;
+  }
+  return s_bridgeOtaState;
+}
+
+const char* climateRoomBridgeOtaIp(void) { return s_bridgeOtaIp; }
+
+const char* climateRoomBridgeOtaHost(void) { return s_bridgeOtaHost; }

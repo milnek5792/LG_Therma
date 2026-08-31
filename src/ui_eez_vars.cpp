@@ -27,7 +27,7 @@ static bool mqttSignalBleWait(void) {
 
 static bool mqttSignalConnecting(void) {
   return uiEez.set_mqtt_enabled && uiEez.sig_wifi &&
-         strstr(uiEez.set_mqtt_status, "Pripoj") != nullptr;
+         strstr(uiEez.set_mqtt_status, "ipoj") != nullptr;
 }
 
 static bool wifiSignalConnecting(void) {
@@ -38,7 +38,7 @@ static bool wifiSignalConnecting(void) {
     return true;
   }
   const char* st = uiEez.set_wifi_status;
-  return strstr(st, "Pripoj") != nullptr || strstr(st, "Obnovuji") != nullptr ||
+  return strstr(st, "ipoj") != nullptr || strstr(st, "Obnovuji") != nullptr ||
          strstr(st, "BLE scan") != nullptr;
 }
 
@@ -123,7 +123,7 @@ void set_var_teplota_vody_vystup(float value) { uiEez.teplota_vody_vystup = valu
 const char* get_var_teplota_vnitrni() { return fmtTempDeci(uiEez.teplota_vnitrni); }
 void set_var_teplota_vnitrni(float value) { uiEez.teplota_vnitrni = value; }
 
-const char* get_var_teplota_venkovni() { return fmtTempUnit(uiEez.teplota_venkovni); }
+const char* get_var_teplota_venkovni() { return fmtTempDeci(uiEez.teplota_venkovni); }
 void set_var_teplota_venkovni(float value) { uiEez.teplota_venkovni = value; }
 
 float get_var_teplota_spad() { return uiEez.teplota_spad; }

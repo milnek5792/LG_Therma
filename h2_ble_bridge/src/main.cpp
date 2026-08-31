@@ -1,4 +1,4 @@
-// ESP32-C3 — SwitchBot Meter → UART bridge pro Tab5
+// Seeed XIAO ESP32-C3 — SwitchBot Meter → UART bridge pro Tab5
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 #include <Preferences.h>
@@ -8,12 +8,15 @@
 #include <string.h>
 #include <vector>
 
-// ESP32-C3 — UART k Tab5 (M5-Bus G6/G7)
+#include "bridge_ota.h"
+#include "h2_uart_protocol.h"
+
+// XIAO ESP32-C3 D6/D7 — UART k Tab5 (M5-Bus G6/G7)
 #ifndef BRIDGE_TX_PIN
-#define BRIDGE_TX_PIN 21
+#define BRIDGE_TX_PIN 21  // D6
 #endif
 #ifndef BRIDGE_RX_PIN
-#define BRIDGE_RX_PIN 20
+#define BRIDGE_RX_PIN 20  // D7
 #endif
 #ifndef UART_BAUD
 #define UART_BAUD 115200
@@ -24,9 +27,11 @@
 #ifndef BLE_OUTDOOR_MAC_DEFAULT
 #define BLE_OUTDOOR_MAC_DEFAULT "E8:76:C3:46:66:14"
 #endif
-// Volitelná WS2812 (DevKit / SuperMini často GPIO8); -1 = bez LED
+// Status LED: Xiao nemá uživatelskou LED → -1; DevKit/SuperMini WS2812 GPIO8
 #ifndef STATUS_LED_PIN
-#ifdef RGB_BUILTIN
+#if defined(ARDUINO_XIAO_ESP32C3)
+#define STATUS_LED_PIN -1
+#elif defined(RGB_BUILTIN)
 #define STATUS_LED_PIN RGB_BUILTIN
 #else
 #define STATUS_LED_PIN 8
@@ -208,6 +213,21 @@ bool macMatch(const uint8_t* nativeLe, const uint8_t target[6]) {
   return fwd || rev;
 }
 
+/** Venkovní Meter (WoSensorTHO): service data 0xFD3D má jen 3 B — baterie v p[2]. */
+bool parseFd3dOutdoorShort(const uint8_t* p, size_t n, int rssi, MeterReading* out) {
+  if (!p || n < 3 || !out) {
+    return false;
+  }
+  const int batt = (int)(p[2] & 0x7F);
+  if (batt > 100) {
+    return false;
+  }
+  out->valid = true;
+  out->batt = batt;
+  out->rssi = rssi;
+  return true;
+}
+
 bool parseFd3dService(const uint8_t* p, size_t n, int rssi, MeterReading* out) {
   if (!p || n < 6 || !out) {
     return false;
@@ -278,13 +298,19 @@ bool parseAdv(const uint8_t* adv, size_t len, int rssi, MeterReading* out) {
     const uint8_t* data = &adv[i + 2];
     const size_t dataLen = fieldLen - 1;
 
-    if (fieldType == 0x16 && dataLen >= 8) {
+    if (fieldType == 0x16 && dataLen >= 5) {
       const uint16_t uuid = (uint16_t)data[0] | ((uint16_t)data[1] << 8);
-      MeterReading tmp{};
-      if (uuid == kSbServiceUuid &&
-          parseFd3dService(data + 2, dataLen - 2, rssi, &tmp)) {
-        fd3d = tmp;
-        gotFd3d = true;
+      if (uuid == kSbServiceUuid) {
+        const uint8_t* payload = data + 2;
+        const size_t plen = dataLen - 2;
+        MeterReading tmp{};
+        if (plen >= 6 && parseFd3dService(payload, plen, rssi, &tmp)) {
+          fd3d = tmp;
+          gotFd3d = true;
+        } else if (plen >= 3 && parseFd3dOutdoorShort(payload, plen, rssi, &tmp)) {
+          fd3d = tmp;
+          gotFd3d = true;
+        }
       }
     }
     if (fieldType == 0xFF && dataLen >= 11) {
@@ -305,10 +331,16 @@ bool parseAdv(const uint8_t* adv, size_t len, int rssi, MeterReading* out) {
   } else {
     *out = mfr;
   }
-  // Sloučit: service data (FD3D) má baterii, manufacturer někdy lepší vlhkost.
+  // Sloučit: venkovní meter dává T/H v 0x0969 a baterii v krátkém 0xFD3D (často jiný paket).
   if (gotFd3d && gotMfr) {
+    if (isnan(out->temp)) {
+      out->temp = mfr.temp;
+    }
     if (isnan(out->hum) || out->hum < 0.0f) {
       out->hum = mfr.hum;
+    }
+    if (out->batt < 0 && fd3d.batt >= 0) {
+      out->batt = fd3d.batt;
     }
     if (out->batt < 0 && mfr.batt >= 0) {
       out->batt = mfr.batt;
@@ -704,8 +736,61 @@ bool beginScan(uint32_t ms, bool discovery, bool wantOk, bool wantTelem) {
   return true;
 }
 
+void abortScanForWifi(void) {
+  if (!s_scanBusy) {
+    return;
+  }
+  NimBLEScan* scan = NimBLEDevice::getScan();
+  if (scan && scan->isScanning()) {
+    scan->stop();
+  }
+  finishScan();
+}
+
+bool handleWifiCommand(char* line) {
+  if (!line) {
+    return false;
+  }
+  if (strcmp(line, H2_CMD_WIFI_OFF) == 0 || strcmp(line, H2_CMD_OTA_STOP) == 0) {
+    abortScanForWifi();
+    bridgeOtaStopWifi();
+    uartPrint("OK\n");
+    return true;
+  }
+  if (strcmp(line, H2_CMD_WIFI_START) == 0) {
+    abortScanForWifi();
+    if (bridgeOtaStartWifiStored()) {
+      uartPrint("OK\n");
+    } else {
+      uartPrint("ERR WIFI\n");
+    }
+    return true;
+  }
+  if (strncmp(line, "WIFI\t", 5) == 0) {
+    char* ssid = line + 5;
+    char* pass = strchr(ssid, '\t');
+    if (!pass || !ssid[0]) {
+      uartPrint("ERR WIFI\n");
+      return true;
+    }
+    *pass++ = '\0';
+    abortScanForWifi();
+    if (bridgeOtaStartWifi(ssid, pass)) {
+      uartPrint("OK\n");
+    } else {
+      uartPrint("ERR WIFI\n");
+    }
+    return true;
+  }
+  return false;
+}
+
 void handleCommand(char* line) {
   if (!line || !line[0]) {
+    return;
+  }
+
+  if (handleWifiCommand(line)) {
     return;
   }
 
@@ -813,6 +898,8 @@ void setup() {
 
   Serial1.begin(UART_BAUD, SERIAL_8N1, BRIDGE_RX_PIN, BRIDGE_TX_PIN);
 
+  bridgeOtaInit(uartPrint);
+
   s_prefs.begin("h2_bridge", false);
   loadMacs();
 
@@ -820,7 +907,7 @@ void setup() {
   char out[20];
   macToStr(s_roomMac, room, sizeof(room));
   macToStr(s_outMac, out, sizeof(out));
-  Serial.printf("[BLE] C3 bridge UART TX=%d RX=%d room=%s out=%s LED=%d\n",
+  Serial.printf("[BLE] Xiao C3 UART TX=%d RX=%d room=%s out=%s LED=%d\n",
                 BRIDGE_TX_PIN, BRIDGE_RX_PIN, room, out, STATUS_LED_PIN);
 
   NimBLEDevice::init("");
@@ -839,7 +926,15 @@ void loop() {
     feedRxByte((char)Serial1.read());
   }
 
+  bridgeOtaTick();
+
   const uint32_t now = millis();
+
+  if (bridgeOtaWifiBusy()) {
+    ledTick();
+    delay(20);
+    return;
+  }
 
   // Watchdog: onScanEnd někdy nedorazí
   if (s_scanBusy && s_scanStartedMs != 0 &&

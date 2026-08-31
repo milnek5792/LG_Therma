@@ -13,7 +13,8 @@
 #include "net_ntp_time.h"
 #include "net_ota.h"
 #include "net_wifi_mgr.h"
-#include "src/ui_ui_lvgl.h"
+#include "ui_eez_settings.h"
+#include "ui_ui_lvgl.h"
 
 #if LG_HAS_SDIO_ARBITER
 #include "src/net_sdio_arbiter.h"
@@ -62,33 +63,36 @@ void netTask(void* /*arg*/) {
   uint32_t lastHbMs = 0;
 
   for (;;) {
+    const bool otaBusy = netOtaIsBusy();
     const bool wifiBusy = netWifiIsBusy();
     const bool mqttBusy = netMqttIsBusy();
     const bool roomBusy = climateRoomIsBusy();
     const uint32_t now = millis();
 
 #if LG_USE_EEZ_LVGL
-    if (roomBusy) {
+    if (!otaBusy) {
+      if (roomBusy) {
 #if !LG_HAS_SDIO_ARBITER
-      uiLvglSetSdioLight(true);
+        uiLvglSetSdioLight(true);
 #endif
-      if (uiLvglIsFrozen()) {
-        uiLvglSetFrozen(false);
-      }
-      freezeUntilMs = 0;
-    } else if (wifiBusy) {
-      if (!uiLvglIsFrozen() && freezeUntilMs == 0) {
-        freezeUntilMs = now + 3500;
-        uiLvglSetFrozen(true);
-        ESP_LOGI(TAG, "LVGL freeze (Wi-Fi)");
-      } else if (uiLvglIsFrozen() && now >= freezeUntilMs && !mqttBusy) {
-        uiLvglSetFrozen(false);
-        ESP_LOGI(TAG, "LVGL unfreeze");
-      }
-    } else if (!mqttBusy) {
-      freezeUntilMs = 0;
-      if (uiLvglIsFrozen()) {
-        uiLvglSetFrozen(false);
+        if (uiLvglIsFrozen()) {
+          uiLvglSetFrozen(false);
+        }
+        freezeUntilMs = 0;
+      } else if (wifiBusy) {
+        if (!uiLvglIsFrozen() && freezeUntilMs == 0) {
+          freezeUntilMs = now + 3500;
+          uiLvglSetFrozen(true);
+          ESP_LOGI(TAG, "LVGL freeze (Wi-Fi)");
+        } else if (uiLvglIsFrozen() && now >= freezeUntilMs && !mqttBusy) {
+          uiLvglSetFrozen(false);
+          ESP_LOGI(TAG, "LVGL unfreeze");
+        }
+      } else if (!mqttBusy) {
+        freezeUntilMs = 0;
+        if (uiLvglIsFrozen()) {
+          uiLvglSetFrozen(false);
+        }
       }
     }
 #endif
@@ -186,7 +190,7 @@ bool uiNetHandleAction(UiAkceTlacitko akce) {
       return true;
     case UI_AKCE_MQTT_CONNECT:
       if (!netWifiIsConnected()) {
-        strncpy(uiEez.set_mqtt_status, "Nejdriv Wi-Fi",
+        strncpy(uiEez.set_mqtt_status, "Nejdřív Wi-Fi",
                 sizeof(uiEez.set_mqtt_status) - 1);
         return true;
       }
@@ -198,7 +202,7 @@ bool uiNetHandleAction(UiAkceTlacitko akce) {
       climateRoomStartScan();
 #else
       climateRoomRequestNow();
-      strncpy(uiEez.set_sys_hint, "Cekam senzor...",
+      strncpy(uiEez.set_sys_hint, "Čekám na senzor...",
               sizeof(uiEez.set_sys_hint) - 1);
       uiEez.set_sys_hint[sizeof(uiEez.set_sys_hint) - 1] = '\0';
 #endif
@@ -212,6 +216,24 @@ bool uiNetHandleAction(UiAkceTlacitko akce) {
       return true;
     case UI_AKCE_SETTINGS_METER3:
       climateRoomSelectMeter(3);
+      return true;
+    case UI_AKCE_SETTINGS_BRIDGE_OTA:
+      if (climateRoomBridgeOtaState() == CLIMATE_BRIDGE_OTA_READY ||
+          climateRoomBridgeOtaState() == CLIMATE_BRIDGE_OTA_CONNECTING) {
+        climateRoomBridgeOtaStop();
+        uiSettingsShowBridgeOtaHint("Bridge OTA vypnuto");
+      } else {
+        char ssid[33];
+        char pass[65];
+        if (netWifiCopyCredentials(ssid, sizeof(ssid), pass, sizeof(pass))) {
+          climateRoomBridgeOtaStartWith(ssid, pass);
+          uiSettingsShowBridgeOtaHint("Bridge OTA: připojuji Wi-Fi...");
+        } else {
+          climateRoomBridgeOtaStart();
+          uiSettingsShowBridgeOtaHint(
+              "Bridge OTA: chybí Wi-Fi - ulož síť v Nastavení");
+        }
+      }
       return true;
 #endif
     default:

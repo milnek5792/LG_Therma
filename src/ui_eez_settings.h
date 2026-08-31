@@ -42,6 +42,7 @@ typedef struct {
   lv_obj_t* lbl_rsp_out;
   lv_obj_t* btn_ble;
   lv_obj_t* btn_mac;
+  lv_obj_t* btn_bridge_ota;
   lv_obj_t* btn_meter1;
   lv_obj_t* btn_meter2;
   lv_obj_t* btn_meter3;
@@ -55,6 +56,7 @@ void uiSettingsCreate();
 void uiSettingsTick();
 /** Okamžitá zpětná vazba po stisku Skenuj (volat z LVGL vlákna). */
 void uiSettingsShowScanning();
+void uiSettingsShowBridgeOtaHint(const char* hint);
 void uiSettingsSetBrightnessFromTouch(uint8_t percent, bool persist);
 lv_obj_t* uiSettingsScreen();
 

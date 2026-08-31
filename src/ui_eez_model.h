@@ -52,6 +52,7 @@ enum UiAkceTlacitko : uint8_t {
   UI_AKCE_SETTINGS_METER2,
   UI_AKCE_SETTINGS_METER3,
   UI_AKCE_SETTINGS_BLE_MAC,
+  UI_AKCE_SETTINGS_BRIDGE_OTA,
   UI_AKCE_BLE_MAC_BACK,
   UI_AKCE_BLE_MAC_SAVE,
   UI_AKCE_SETTINGS_PLAN,
@@ -124,6 +125,7 @@ struct UiEezModel {
   char set_mqtt_host[64];
   char set_mqtt_status[40];
   char set_sys_hint[64];
+  char porucha_text[80];
   bool set_wifi_enabled;
   bool set_mqtt_enabled;
 

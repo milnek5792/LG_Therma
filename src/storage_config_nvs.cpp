@@ -36,7 +36,41 @@ constexpr uint16_t kPlanVersion = 4;
 /** Nejstarší verze se stejným binárním layoutem (včetně cas_rezim). */
 constexpr uint16_t kPlanVersionMinCompat = 2;
 constexpr uint32_t kRegMagic = 0x52454731u;  // REG1
-constexpr uint16_t kRegVersion = 4;
+constexpr uint16_t kRegVersion = 5;
+
+/** NVS v4 — venkovní body + bias_pct (nepoužito v regulaci). */
+struct RegulatorConfigV4 {
+  float room_sp_c;
+  float t_out_cold_c;
+  float u_cold_pct;
+  float t_out_warm_c;
+  float u_warm_pct;
+  float kp;
+  float ki;
+  float kd;
+  float bias_pct;
+  float trim_limit_pct;
+  float deadband_c;
+  uint8_t use_equitherm;
+  uint8_t _pad[3];
+};
+
+void migrateRegulatorV4ToV5(const RegulatorConfigV4* old, RegulatorConfig* cfg) {
+  if (!old || !cfg) {
+    return;
+  }
+  cfg->room_sp_c = old->room_sp_c;
+  cfg->t_water_cold_c = REG_EQ_WATER_COLD_DEFAULT_C;
+  cfg->t_water_warm_c = REG_EQ_WATER_WARM_DEFAULT_C;
+  cfg->offset_c = 0.0f;
+  cfg->kp = old->kp;
+  cfg->ki = old->ki;
+  cfg->kd = old->kd;
+  cfg->trim_limit_pct = old->trim_limit_pct;
+  cfg->deadband_c = old->deadband_c;
+  cfg->use_equitherm = old->use_equitherm;
+  cfg->_pad[0] = cfg->_pad[1] = cfg->_pad[2] = 0;
+}
 
 void ensureOpen() {
   if (s_open) {
@@ -210,12 +244,12 @@ bool storageLoadRegulatorConfig(RegulatorConfig* cfg) {
   }
   ensureOpen();
   size_t len = s_prefs.getBytesLength(kKeyReg);
-  if (len < sizeof(RegulatorConfig) + 6) {
+  if (len < 6) {
     return false;
   }
-  uint8_t buf[sizeof(RegulatorConfig) + 8];
+  uint8_t buf[128];
   const size_t got = s_prefs.getBytes(kKeyReg, buf, sizeof(buf));
-  if (got < 6 + sizeof(RegulatorConfig)) {
+  if (got < 6) {
     return false;
   }
   uint32_t magic = 0;
@@ -225,8 +259,24 @@ bool storageLoadRegulatorConfig(RegulatorConfig* cfg) {
   if (magic != kRegMagic || version < 1) {
     return false;
   }
-  memcpy(cfg, buf + 6, sizeof(RegulatorConfig));
-  return true;
+  if (version >= kRegVersion) {
+    if (got < 6 + sizeof(RegulatorConfig)) {
+      return false;
+    }
+    memcpy(cfg, buf + 6, sizeof(RegulatorConfig));
+    return true;
+  }
+  if (version <= 4) {
+    if (got < 6 + sizeof(RegulatorConfigV4)) {
+      return false;
+    }
+    RegulatorConfigV4 old{};
+    memcpy(&old, buf + 6, sizeof(RegulatorConfigV4));
+    migrateRegulatorV4ToV5(&old, cfg);
+    storageSaveRegulatorConfig(cfg);
+    return true;
+  }
+  return false;
 }
 
 void storageSaveRegulatorConfig(const RegulatorConfig* cfg) {

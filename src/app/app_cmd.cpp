@@ -185,6 +185,9 @@ void appCmdDrainUi(void) {
       case UI_AKCE_SETTINGS_METER3:
         uiNetHandleAction(akce);
         break;
+      case UI_AKCE_SETTINGS_BRIDGE_OTA:
+        uiNetHandleAction(akce);
+        break;
       case UI_AKCE_SETTINGS_BLE_MAC:
         uiNavigateTo(SCREEN_ID_BLE_MAC);
         break;

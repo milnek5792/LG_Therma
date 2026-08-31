@@ -102,6 +102,11 @@ void action_akce_settings_ble_mac(lv_event_t* e) {
   enqueue(UI_AKCE_SETTINGS_BLE_MAC);
 }
 
+void action_akce_settings_bridge_ota(lv_event_t* e) {
+  (void)e;
+  enqueue(UI_AKCE_SETTINGS_BRIDGE_OTA);
+}
+
 void action_akce_settings_plan(lv_event_t* e) {
   (void)e;
   enqueue(UI_AKCE_SETTINGS_PLAN);

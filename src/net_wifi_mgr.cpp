@@ -24,8 +24,8 @@ WifiPhase s_phase = WifiPhase::kOff;
 unsigned long s_connectStartedMs = 0;
 
 char s_status[40] = "Odpojeno";
-char s_ssid[33] = "—";
-char s_ip[16] = "—";
+char s_ssid[33] = "---";
+char s_ip[16] = "---";
 char s_credSsid[33] = "";
 char s_credPass[65] = "";
 
@@ -38,8 +38,8 @@ void setStatus(const char* text) {
 
 void clearRuntimeNetworkInfo() {
   s_connected = false;
-  strncpy(s_ssid, "—", sizeof(s_ssid));
-  strncpy(s_ip, "—", sizeof(s_ip));
+  strncpy(s_ssid, "---", sizeof(s_ssid));
+  strncpy(s_ip, "---", sizeof(s_ip));
 }
 
 void ensureWifiPins() {
@@ -85,7 +85,7 @@ void refreshConnectedState() {
 
   s_connected = true;
   s_phase = WifiPhase::kConnected;
-  setStatus("Pripojeno");
+  setStatus("Připojeno");
 
   const String currentSsid = WiFi.SSID();
   if (currentSsid.length() > 0) {
@@ -118,10 +118,10 @@ void startConnect() {
   WiFi.mode(WIFI_STA);
   WiFi.disconnect(true, true);
 
-  setStatus("Pripojovani...");
+  setStatus("Připojování...");
   strncpy(s_ssid, s_credSsid, sizeof(s_ssid) - 1);
   s_ssid[sizeof(s_ssid) - 1] = '\0';
-  strncpy(s_ip, "—", sizeof(s_ip));
+  strncpy(s_ip, "---", sizeof(s_ip));
 
   Serial.printf("[NET] Wi-Fi pripojuji k '%s'\n", s_credSsid);
   WiFi.begin(s_credSsid, s_credPass);
@@ -203,6 +203,22 @@ bool netWifiHasCredentials() {
   return loadCredentials();
 }
 
+bool netWifiCopyCredentials(char* ssid, size_t ssidLen, char* pass,
+                            size_t passLen) {
+  if (!loadCredentials()) {
+    return false;
+  }
+  if (ssid && ssidLen > 0) {
+    strncpy(ssid, s_credSsid, ssidLen - 1);
+    ssid[ssidLen - 1] = '\0';
+  }
+  if (pass && passLen > 0) {
+    strncpy(pass, s_credPass, passLen - 1);
+    pass[passLen - 1] = '\0';
+  }
+  return s_credSsid[0] != '\0';
+}
+
 void netWifiSetCredentials(const char* ssid, const char* pass) {
   if (!ssid || !pass) { return; }
   strncpy(s_credSsid, ssid, sizeof(s_credSsid) - 1);
@@ -240,7 +256,7 @@ void netWifiTick() {
   if (millis() - s_connectStartedMs >= kConnectTimeoutMs) {
     s_phase = WifiPhase::kFailed;
     s_connected = false;
-    setStatus("Timeout pripojeni");
+    setStatus("Timeout připojení");
     Serial.println("[NET] Wi-Fi timeout");
     WiFi.disconnect(true, true);
     return;

@@ -22,6 +22,9 @@ objects_t objects;
 
 lv_obj_t *tick_value_change_obj;
 
+static lv_obj_t *s_spCluster = NULL;
+static lv_obj_t *s_spValueRow = NULL;
+
 static void alignTempUnit(lv_obj_t *valueLbl, lv_obj_t *unitLbl) {
     if (!valueLbl || !unitLbl) {
         return;
@@ -29,8 +32,118 @@ static void alignTempUnit(lv_obj_t *valueLbl, lv_obj_t *unitLbl) {
     lv_obj_align_to(unitLbl, valueLbl, LV_ALIGN_OUT_RIGHT_TOP, 4, 2);
 }
 
+static void resetSpLabelLayout(lv_obj_t *obj) {
+    if (!obj) {
+        return;
+    }
+    lv_obj_set_style_align(obj, LV_ALIGN_DEFAULT, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_pos(obj, 0, 0);
+}
+
+/** Jednorázově: sloupec titulku, hodnoty a vodního SP mezi tlačítky −/+. */
+static void initSpControlCluster(void) {
+    if (s_spCluster || !objects.btn_minus || !objects.btn_plus) {
+        return;
+    }
+
+    lv_obj_t *parent = lv_obj_get_parent(objects.btn_minus);
+    if (!parent) {
+        return;
+    }
+
+    s_spCluster = lv_obj_create(parent);
+    lv_obj_remove_flag(s_spCluster,
+                       (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
+    lv_obj_set_style_bg_opa(s_spCluster, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(s_spCluster, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(s_spCluster, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_row(s_spCluster, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_flex_flow(s_spCluster, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(s_spCluster, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+
+    s_spValueRow = lv_obj_create(s_spCluster);
+    lv_obj_remove_flag(s_spValueRow,
+                       (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE));
+    lv_obj_set_style_bg_opa(s_spValueRow, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(s_spValueRow, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(s_spValueRow, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_column(s_spValueRow, 4, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_flex_flow(s_spValueRow, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(s_spValueRow, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_width(s_spValueRow, LV_PCT(100));
+    lv_obj_set_height(s_spValueRow, LV_SIZE_CONTENT);
+
+    if (objects.lbl_setpoint_title) {
+        lv_obj_set_parent(objects.lbl_setpoint_title, s_spCluster);
+        resetSpLabelLayout(objects.lbl_setpoint_title);
+        lv_obj_set_width(objects.lbl_setpoint_title, LV_PCT(100));
+        lv_obj_set_style_text_align(objects.lbl_setpoint_title, LV_TEXT_ALIGN_CENTER,
+                                    LV_PART_MAIN | LV_STATE_DEFAULT);
+    }
+    if (objects.lbl_setpoint) {
+        lv_obj_set_parent(objects.lbl_setpoint, s_spValueRow);
+        resetSpLabelLayout(objects.lbl_setpoint);
+    }
+    if (objects.lbl_setpoint_unit) {
+        lv_obj_set_parent(objects.lbl_setpoint_unit, s_spValueRow);
+        resetSpLabelLayout(objects.lbl_setpoint_unit);
+    }
+    if (objects.lbl_water_sp) {
+        lv_obj_set_parent(objects.lbl_water_sp, s_spCluster);
+        resetSpLabelLayout(objects.lbl_water_sp);
+        lv_obj_set_width(objects.lbl_water_sp, LV_PCT(100));
+        lv_obj_set_style_text_align(objects.lbl_water_sp, LV_TEXT_ALIGN_CENTER,
+                                    LV_PART_MAIN | LV_STATE_DEFAULT);
+    }
+
+    lv_obj_move_to_index(objects.lbl_setpoint_title, 0);
+    lv_obj_move_to_index(s_spValueRow, 1);
+    lv_obj_move_to_index(objects.lbl_water_sp, 2);
+    lv_obj_move_background(s_spCluster);
+}
+
+/** Umístí flex kontejner do mezery mezi tlačítky −/+. */
+static void layoutSpControlCluster(void) {
+    if (!objects.btn_minus || !objects.btn_plus) {
+        return;
+    }
+    if (!s_spCluster) {
+        initSpControlCluster();
+    }
+    if (!s_spCluster) {
+        return;
+    }
+
+    const int gapL = lv_obj_get_x(objects.btn_minus) + lv_obj_get_width(objects.btn_minus);
+    const int gapR = lv_obj_get_x(objects.btn_plus);
+    const int gapW = gapR - gapL - 12;
+    if (gapW < 80) {
+        return;
+    }
+
+    const int btnY = lv_obj_get_y(objects.btn_minus);
+    const int btnH = lv_obj_get_height(objects.btn_minus);
+    lv_obj_set_pos(s_spCluster, gapL + 6, btnY);
+    lv_obj_set_size(s_spCluster, gapW, btnH);
+}
+
+static void centerTitleAboveValue(lv_obj_t *title, lv_obj_t *value, lv_coord_t gap) {
+    if (!title || !value) {
+        return;
+    }
+    lv_obj_update_layout(value);
+    lv_obj_align_to(title, value, LV_ALIGN_OUT_TOP_MID, 0, -gap);
+}
+
+static void layoutWaterTempTitles(void) {
+    centerTitleAboveValue(objects.lbl_vstup_title, objects.lbl_vstup_value, 6);
+    centerTitleAboveValue(objects.lbl_vystup_title, objects.lbl_vystup_value, 6);
+}
+
 static void setTempValueAndUnit(lv_obj_t *valueLbl, lv_obj_t *unitLbl, const char *new_val,
-                               uint32_t onlineColor) {
+                               uint32_t onlineColor, uint8_t slot) {
     const char *cur_val = lv_label_get_text(valueLbl);
     if (strcmp(new_val, cur_val) != 0) {
         tick_value_change_obj = valueLbl;
@@ -43,9 +156,14 @@ static void setTempValueAndUnit(lv_obj_t *valueLbl, lv_obj_t *unitLbl, const cha
          strcmp(new_val, "---") == 0)
             ? 0x8e8e93u
             : onlineColor;
-    lv_obj_set_style_text_color(valueLbl, lv_color_hex(col), LV_PART_MAIN | LV_STATE_DEFAULT);
-    if (unitLbl) {
-        lv_obj_set_style_text_color(unitLbl, lv_color_hex(col), LV_PART_MAIN | LV_STATE_DEFAULT);
+    static uint32_t s_lastCol[4] = {0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu};
+    if (slot < 4 && s_lastCol[slot] != col) {
+        s_lastCol[slot] = col;
+        lv_obj_set_style_text_color(valueLbl, lv_color_hex(col), LV_PART_MAIN | LV_STATE_DEFAULT);
+        if (unitLbl) {
+            lv_obj_set_style_text_color(unitLbl, lv_color_hex(col),
+                                        LV_PART_MAIN | LV_STATE_DEFAULT);
+        }
     }
 }
 
@@ -221,7 +339,7 @@ void create_screen_main() {
             lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_CHAIN);
             lv_obj_remove_flag(obj, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM));
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_set_style_text_font(obj, &lv_font_montserrat_22, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_font(obj, &ui_font_font_cs_24, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text(obj, "");
@@ -291,16 +409,16 @@ void create_screen_main() {
             lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_CHAIN);
             lv_obj_remove_flag(obj, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM));
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_set_style_text_font(obj, &ui_font_font_cs_16, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_font(obj, &ui_font_font_cs_24, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "POŽADOVANÁ TEPLOTA");
         }
         {
             // btn_minus
             lv_obj_t *obj = lv_button_create(parent_obj);
             objects.btn_minus = obj;
-            lv_obj_set_pos(obj, 107, 151);
-            lv_obj_set_size(obj, 100, 100);
+            lv_obj_set_pos(obj, 48, 120);
+            lv_obj_set_size(obj, 128, 128);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_add_event_cb(obj, action_akce_teplota_minus, LV_EVENT_CLICKED, (void *)0);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_CHAIN);
@@ -334,7 +452,6 @@ void create_screen_main() {
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_set_style_text_font(obj, &lv_font_montserrat_48, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text(obj, "");
         }
         {
@@ -357,7 +474,7 @@ void create_screen_main() {
             objects.lbl_water_sp = obj;
             lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_set_style_text_font(obj, &ui_font_font_cs_16, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_font(obj, &ui_font_font_cs_24, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0x8e8e93), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text(obj, "");
         }
@@ -365,8 +482,8 @@ void create_screen_main() {
             // btn_plus
             lv_obj_t *obj = lv_button_create(parent_obj);
             objects.btn_plus = obj;
-            lv_obj_set_pos(obj, 488, 152);
-            lv_obj_set_size(obj, 100, 100);
+            lv_obj_set_pos(obj, 608, 120);
+            lv_obj_set_size(obj, 128, 128);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
             lv_obj_add_event_cb(obj, action_akce_teplota_plus, LV_EVENT_CLICKED, (void *)0);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_CHAIN);
@@ -418,7 +535,7 @@ void create_screen_main() {
             lv_obj_remove_flag(obj, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM));
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
             add_style_text_24(obj);
-            lv_obj_set_style_text_font(obj, &ui_font_font_cs_16, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_font(obj, &ui_font_font_cs_24, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0xff9f0a), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text_static(obj, "TÝDENNÍ PLÁN AKTIVNÍ");
@@ -427,12 +544,12 @@ void create_screen_main() {
             // lbl_plan_text
             lv_obj_t *obj = lv_label_create(parent_obj);
             objects.lbl_plan_text = obj;
-            lv_obj_set_pos(obj, 60, 472);
-            lv_obj_set_size(obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+            lv_obj_set_pos(obj, 60, 478);
+            lv_obj_set_size(obj, 720, LV_SIZE_CONTENT);
             lv_obj_add_flag(obj, LV_OBJ_FLAG_SCROLL_CHAIN);
             lv_obj_remove_flag(obj, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM));
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_set_style_text_font(obj, &ui_font_font_cs_16, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_obj_set_style_text_font(obj, &ui_font_font_cs_24, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_color(obj, lv_color_hex(0xaeaeae), LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN | LV_STATE_DEFAULT);
             lv_label_set_text(obj, "");
@@ -678,7 +795,8 @@ void create_screen_main() {
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
             add_style_text_24(obj);
             lv_obj_set_style_text_font(obj, &ui_font_font_cs_24, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text_static(obj, "Teplota vstup");
+            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text_static(obj, "Teplota na vstupu");
         }
         {
             // lbl_vstup_value
@@ -705,7 +823,8 @@ void create_screen_main() {
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
             add_style_text_24(obj);
             lv_obj_set_style_text_font(obj, &ui_font_font_cs_24, LV_PART_MAIN | LV_STATE_DEFAULT);
-            lv_label_set_text_static(obj, "Teplota výstup");
+            lv_obj_set_style_text_align(obj, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+            lv_label_set_text_static(obj, "Teplota na výstupu");
         }
         {
             // lbl_vystup_value
@@ -743,7 +862,7 @@ void create_screen_main() {
                     lv_obj_remove_flag(obj, (lv_obj_flag_t)(LV_OBJ_FLAG_SCROLLABLE|LV_OBJ_FLAG_SCROLL_CHAIN_HOR|LV_OBJ_FLAG_SCROLL_CHAIN_VER|LV_OBJ_FLAG_SCROLL_ELASTIC|LV_OBJ_FLAG_SCROLL_MOMENTUM));
             lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
                     lv_obj_set_style_align(obj, LV_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
-                    lv_obj_set_style_text_font(obj, &lv_font_montserrat_18, LV_PART_MAIN | LV_STATE_DEFAULT);
+                    lv_obj_set_style_text_font(obj, &ui_font_font_cs_24, LV_PART_MAIN | LV_STATE_DEFAULT);
                     lv_obj_set_style_text_color(obj, lv_color_hex(0xffffff), LV_PART_MAIN | LV_STATE_DEFAULT);
                     lv_label_set_text_static(obj, "MENU");
                 }
@@ -751,6 +870,9 @@ void create_screen_main() {
         }
     }
     
+    initSpControlCluster();
+    layoutSpControlCluster();
+    layoutWaterTempTitles();
     tick_screen_main();
 }
 
@@ -803,7 +925,6 @@ void tick_screen_main() {
             tick_value_change_obj = objects.lbl_setpoint;
             lv_label_set_text(objects.lbl_setpoint, new_val);
             tick_value_change_obj = NULL;
-            alignTempUnit(objects.lbl_setpoint, objects.lbl_setpoint_unit);
         }
         uint32_t col = get_var_teplota_vody_set_color();
         static uint32_t s_spCol = 0;
@@ -819,20 +940,28 @@ void tick_screen_main() {
         }
     }
     {
-        const char *title = (get_var_rezim() == 0)
-                                ? "Nastaveni pokojove teploty"
-                                : "Nastaveni teploty vody";
+        const bool roomMode = (get_var_rezim() == 0);
+        const char *title = roomMode
+                                ? "Nastavení pokojové teploty"
+                                : "Nastavení teploty vody";
+        const uint32_t titleCol = roomMode ? 0x0A84FFu : 0xFF9F0Au;
         const char *cur = lv_label_get_text(objects.lbl_setpoint_title);
         if (!cur || strcmp(cur, title) != 0) {
             lv_label_set_text(objects.lbl_setpoint_title, title);
+        }
+        static int8_t s_lastMode = -1;
+        const int8_t modeNow = roomMode ? 0 : 1;
+        if (s_lastMode != modeNow) {
+            s_lastMode = modeNow;
+            lv_obj_set_style_text_color(
+                objects.lbl_setpoint_title, lv_color_hex(titleCol),
+                LV_PART_MAIN | LV_STATE_DEFAULT);
         }
     }
     {
         if (objects.lbl_water_sp) {
             if (get_var_rezim() == 0) {
                 lv_obj_remove_flag(objects.lbl_water_sp, LV_OBJ_FLAG_HIDDEN);
-                lv_obj_align_to(objects.lbl_water_sp, objects.lbl_setpoint,
-                                LV_ALIGN_OUT_BOTTOM_MID, 0, 8);
                 char line[48];
                 snprintf(line, sizeof(line), "Voda SP %s °C",
                          get_var_teplota_vody_set_lin());
@@ -970,20 +1099,22 @@ void tick_screen_main() {
     }
     {
         setTempValueAndUnit(objects.lbl_vnitrni_value, nullptr,
-                            get_var_teplota_vnitrni(), 0xffffffu);
+                            get_var_teplota_vnitrni(), 0xffffffu, 0);
     }
     {
         setTempValueAndUnit(objects.lbl_venkovni_value, nullptr,
-                            get_var_teplota_venkovni(), 0xffffffu);
+                            get_var_teplota_venkovni(), 0x64d2ffu, 1);
     }
     {
         setTempValueAndUnit(objects.lbl_vstup_value, nullptr,
-                            get_var_teplota_vody_vstup(), 0xffffffu);
+                            get_var_teplota_vody_vstup(), 0xffffffu, 2);
     }
     {
         setTempValueAndUnit(objects.lbl_vystup_value, nullptr,
-                            get_var_teplota_vody_vystup(), 0xff9f0au);
+                            get_var_teplota_vody_vystup(), 0xff9f0au, 3);
     }
+    layoutSpControlCluster();
+    layoutWaterTempTitles();
 }
 
 #include "ui_eez_plan.h"

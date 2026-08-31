@@ -99,7 +99,10 @@ lv_obj_t* makeButton(lv_obj_t* parent, int x, int y, int w, int h, const char* t
   return obj;
 }
 
-void markDirty() { s_dirty = true; }
+void markDirty() {
+  s_dirty = true;
+  climateRegulatorRequestSave();
+}
 
 void onBack(lv_event_t* e) {
   (void)e;
@@ -161,29 +164,35 @@ void onKdP(lv_event_t* e) {
   (void)e;
   adjustFloat(&climateRegulatorGetConfigMutable()->kd, 0.5f, 0.0f, 20.0f);
 }
-void onBiasM(lv_event_t* e) {
+void onOffsetM(lv_event_t* e) {
   (void)e;
-  adjustFloat(&climateRegulatorGetConfigMutable()->bias_pct, -1.0f, -25.0f, 25.0f);
+  adjustFloat(&climateRegulatorGetConfigMutable()->offset_c, -0.5f,
+              REG_EQ_OFFSET_MIN_C, REG_EQ_OFFSET_MAX_C);
 }
-void onBiasP(lv_event_t* e) {
+void onOffsetP(lv_event_t* e) {
   (void)e;
-  adjustFloat(&climateRegulatorGetConfigMutable()->bias_pct, 1.0f, -25.0f, 25.0f);
+  adjustFloat(&climateRegulatorGetConfigMutable()->offset_c, 0.5f,
+              REG_EQ_OFFSET_MIN_C, REG_EQ_OFFSET_MAX_C);
 }
 void onColdM(lv_event_t* e) {
   (void)e;
-  adjustFloat(&climateRegulatorGetConfigMutable()->t_out_cold_c, -1.0f, -30.0f, 0.0f);
+  adjustFloat(&climateRegulatorGetConfigMutable()->t_water_cold_c, -0.5f,
+              REG_T_WATER_MIN_C, REG_T_WATER_MAX_C);
 }
 void onColdP(lv_event_t* e) {
   (void)e;
-  adjustFloat(&climateRegulatorGetConfigMutable()->t_out_cold_c, 1.0f, -30.0f, 0.0f);
+  adjustFloat(&climateRegulatorGetConfigMutable()->t_water_cold_c, 0.5f,
+              REG_T_WATER_MIN_C, REG_T_WATER_MAX_C);
 }
 void onWarmM(lv_event_t* e) {
   (void)e;
-  adjustFloat(&climateRegulatorGetConfigMutable()->t_out_warm_c, -1.0f, 5.0f, 25.0f);
+  adjustFloat(&climateRegulatorGetConfigMutable()->t_water_warm_c, -0.5f,
+              REG_T_WATER_MIN_C, REG_T_WATER_MAX_C);
 }
 void onWarmP(lv_event_t* e) {
   (void)e;
-  adjustFloat(&climateRegulatorGetConfigMutable()->t_out_warm_c, 1.0f, 5.0f, 25.0f);
+  adjustFloat(&climateRegulatorGetConfigMutable()->t_water_warm_c, 0.5f,
+              REG_T_WATER_MIN_C, REG_T_WATER_MAX_C);
 }
 
 void refreshChart() {
@@ -246,9 +255,9 @@ void uiRegulatorCreate(void) {
   lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
   regulatorObj.btn_back =
-      makeButton(scr, kMargin, 4, 120, kBtnH, "<- ZPET", onBack, 0x48484Fu);
+      makeButton(scr, kMargin, 4, 120, kBtnH, "<- ZPĚT", onBack, 0x48484Fu);
 
-  regulatorObj.lbl_title = makeLabel(scr, 0, 10, 0, "REGULATOR", kColText);
+  regulatorObj.lbl_title = makeLabel(scr, 0, 10, 0, "REGULÁTOR", kColText);
   lv_obj_set_style_text_font(regulatorObj.lbl_title, kFontTitle, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_align(regulatorObj.lbl_title, LV_ALIGN_TOP_MID,
                          LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -258,14 +267,14 @@ void uiRegulatorCreate(void) {
   regulatorObj.btn_ekv =
       makeButton(scr, kW - kMargin - 310, 4, 140, kBtnH, "PID only", onEkvToggle, kColOrange);
   regulatorObj.btn_save =
-      makeButton(scr, kW - kMargin - 460, 4, 130, kBtnH, "Ulozit", onSave, kColAccent);
+      makeButton(scr, kW - kMargin - 460, 4, 130, kBtnH, "Uložit", onSave, kColAccent);
 
   const int contentW = kW - 2 * kMargin;
   const int topY = 52;
   const int chartH = 260;
   lv_obj_t* chartPanel = makePanel(scr, kMargin, topY, contentW, chartH);
 
-  makeLabel(chartPanel, kPad, 4, 400, "Graf: pokoj (zel) / SP (oranz) / SP vody (modra)",
+  makeLabel(chartPanel, kPad, 4, 400, "Graf: pokoj (zel.) / SP (oranž.) / SP vody (modře)",
             kColMuted);
 
   regulatorObj.chart = lv_chart_create(chartPanel);
@@ -301,7 +310,7 @@ void uiRegulatorCreate(void) {
   lv_label_set_long_mode(regulatorObj.lbl_live, LV_LABEL_LONG_WRAP);
 
   lv_obj_t* pidPanel = makePanel(scr, kMargin + colW + kGap, bottomY, colW, bottomH);
-  makeLabel(pidPanel, kPad, 4, colW - 2 * kPad, "PID / krivka", kColOrange);
+  makeLabel(pidPanel, kPad, 4, colW - 2 * kPad, "PID / křivka", kColOrange);
   regulatorObj.lbl_pid =
       makeLabel(pidPanel, kPad, 26, colW - 2 * kPad, "Kp Ki Kd", kColText);
   regulatorObj.lbl_curve =
@@ -341,10 +350,27 @@ void uiRegulatorCreate(void) {
   placeParamRow(byTop, "Kp", onKpM, onKpP, "Ki", onKiM, onKiP, "Kd", onKdM, onKdP,
                 &regulatorObj.btn_kp_m, &regulatorObj.btn_kp_p, &regulatorObj.btn_ki_m,
                 &regulatorObj.btn_ki_p, &regulatorObj.btn_kd_m, &regulatorObj.btn_kd_p);
-  placeParamRow(byBottom, "bias", onBiasM, onBiasP, "Tcold", onColdM, onColdP, "Twarm",
-                onWarmM, onWarmP, &regulatorObj.btn_bias_m, &regulatorObj.btn_bias_p,
-                &regulatorObj.btn_cold_m, &regulatorObj.btn_cold_p,
-                &regulatorObj.btn_warm_m, &regulatorObj.btn_warm_p);
+  placeParamRow(byBottom, "offset", onOffsetM, onOffsetP, "voda -15", onColdM, onColdP,
+                "voda +15", onWarmM, onWarmP, &regulatorObj.btn_bias_m,
+                &regulatorObj.btn_bias_p, &regulatorObj.btn_cold_m,
+                &regulatorObj.btn_cold_p, &regulatorObj.btn_warm_m,
+                &regulatorObj.btn_warm_p);
+
+  const int valY = byBottom + bh + 8;
+  regulatorObj.lbl_val_bias =
+      makeLabel(pidPanel, kPad, valY, groupW, "offset -", kColAccent);
+  regulatorObj.lbl_val_cold =
+      makeLabel(pidPanel, kPad + groupW + groupGap, valY, groupW, "voda -15 -",
+                kColAccent);
+  regulatorObj.lbl_val_warm =
+      makeLabel(pidPanel, kPad + 2 * (groupW + groupGap), valY, groupW,
+                "voda +15 -", kColAccent);
+  lv_obj_set_style_text_align(regulatorObj.lbl_val_bias, LV_TEXT_ALIGN_CENTER,
+                              LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_align(regulatorObj.lbl_val_cold, LV_TEXT_ALIGN_CENTER,
+                              LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_align(regulatorObj.lbl_val_warm, LV_TEXT_ALIGN_CENTER,
+                              LV_PART_MAIN | LV_STATE_DEFAULT);
 
   s_created = true;
   uiRegulatorTick();
@@ -378,11 +404,16 @@ void uiRegulatorTick(void) {
   static float s_lastKp = -1.0f;
   static float s_lastKi = -1.0f;
   static float s_lastKd = -1.0f;
+  static float s_lastOffset = -999.0f;
+  static float s_lastCold = -999.0f;
+  static float s_lastWarm = -999.0f;
   static bool s_lastDirty = false;
   const uint32_t now = millis();
   const RegulatorConfig* cfg = climateRegulatorGetConfig();
-  const bool paramsChanged = (cfg->kp != s_lastKp) || (cfg->ki != s_lastKi) ||
-                             (cfg->kd != s_lastKd) || (s_dirty != s_lastDirty);
+  const bool paramsChanged =
+      (cfg->kp != s_lastKp) || (cfg->ki != s_lastKi) || (cfg->kd != s_lastKd) ||
+      (cfg->offset_c != s_lastOffset) || (cfg->t_water_cold_c != s_lastCold) ||
+      (cfg->t_water_warm_c != s_lastWarm) || (s_dirty != s_lastDirty);
   if (!paramsChanged && s_lastStatusMs != 0 && (now - s_lastStatusMs) < 1000u) {
     if (chartNeedsRefresh()) {
       refreshChart();
@@ -393,6 +424,9 @@ void uiRegulatorTick(void) {
   s_lastKp = cfg->kp;
   s_lastKi = cfg->ki;
   s_lastKd = cfg->kd;
+  s_lastOffset = cfg->offset_c;
+  s_lastCold = cfg->t_water_cold_c;
+  s_lastWarm = cfg->t_water_warm_c;
   s_lastDirty = s_dirty;
 
   RegulatorSnapshot snap{};
@@ -400,7 +434,7 @@ void uiRegulatorTick(void) {
 
   lv_obj_t* modeLbl = lv_obj_get_child(regulatorObj.btn_mode, 0);
   if (modeLbl) {
-    setLabelIfChanged(modeLbl, snap.active ? "Auto ON" : "Vystupni T");
+    setLabelIfChanged(modeLbl, snap.active ? "Auto ON" : "Výstupní T");
   }
   static bool s_lastActive = false;
   static bool s_haveActive = false;
@@ -435,16 +469,16 @@ void uiRegulatorTick(void) {
   const float outUi = uiEez.teplota_venkovni;
   const bool outUiOk = outUi > (UI_TEPLOTA_NEPLATNA + 100.0f);
 
-  const char* modeTxt = "Vystupni T (pauza)";
+  const char* modeTxt = "Výstupní T (pauza)";
   if (snap.active) {
-    modeTxt = snap.eco_mode ? "Auto — Eco (kompresor off)" : "Auto — bezna regulace";
+    modeTxt = snap.eco_mode ? "Auto - Eco (kompresor vyp.)" : "Auto - běžná regulace";
   }
 
   char line[260];
   snprintf(line, sizeof(line),
            "%s\n"
-           "zaklad %.1f + kor %.1f = %.1f  LIN %u C\n"
-           "P %.1f  I %.1f C   e %.2f C\n"
+           "základ %.1f + korekce %.1f = %.1f  LIN %u °C\n"
+           "P %.1f  I %.1f °C   e %.2f °C\n"
            "pokoj %.1f / SP %.1f   venku %.1f\n"
            "senzor %s%s",
            modeTxt, (double)snap.eq_base_c, (double)snap.pid_corr_c,
@@ -459,8 +493,17 @@ void uiRegulatorTick(void) {
            (double)cfg->kp, (double)cfg->ki, (double)cfg->kd);
   setLabelIfChanged(regulatorObj.lbl_pid, line);
 
-  snprintf(line, sizeof(line), "ekv: 35.73-0.515*Tout  kor -5..+3  Eco +0.3");
+  snprintf(line, sizeof(line), "ekv: voda -15..+15 + offset  kor -5..+3  Eco +0.3");
   setLabelIfChanged(regulatorObj.lbl_curve, line);
+
+  snprintf(line, sizeof(line), "%+.1f C", (double)cfg->offset_c);
+  setLabelIfChanged(regulatorObj.lbl_val_bias, line);
+
+  snprintf(line, sizeof(line), "%.1f C", (double)cfg->t_water_cold_c);
+  setLabelIfChanged(regulatorObj.lbl_val_cold, line);
+
+  snprintf(line, sizeof(line), "%.1f C", (double)cfg->t_water_warm_c);
+  setLabelIfChanged(regulatorObj.lbl_val_warm, line);
 
   if (chartNeedsRefresh()) {
     refreshChart();

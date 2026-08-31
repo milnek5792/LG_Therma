@@ -7,6 +7,7 @@
 #include "bus_lg_protocol.h"
 
 #include "storage_config_nvs.h"
+#include "ui_eez_porucha.h"
 
 #include <cstdio>
 #include <cstring>
@@ -56,14 +57,15 @@ void uiEezInit() {
   strncpy(uiEez.cas_text, "--:--", sizeof(uiEez.cas_text));
   strncpy(uiEez.datum_text, "--.--.----", sizeof(uiEez.datum_text));
   uiEez.cas_platny = false;
-  strncpy(uiEez.plan_title, "PLAN VYPNUTY", sizeof(uiEez.plan_title));
-  strncpy(uiEez.plan_text, "Casovy plan je neaktivni", sizeof(uiEez.plan_text));
-  strncpy(uiEez.set_wifi_ssid, "—", sizeof(uiEez.set_wifi_ssid));
-  strncpy(uiEez.set_wifi_ip, "—", sizeof(uiEez.set_wifi_ip));
+  strncpy(uiEez.plan_title, "PLÁN VYPNUTÝ", sizeof(uiEez.plan_title));
+  strncpy(uiEez.plan_text, "Časový plán je neaktivní", sizeof(uiEez.plan_text));
+  strncpy(uiEez.set_wifi_ssid, "---", sizeof(uiEez.set_wifi_ssid));
+  strncpy(uiEez.set_wifi_ip, "---", sizeof(uiEez.set_wifi_ip));
   strncpy(uiEez.set_wifi_status, "Odpojeno", sizeof(uiEez.set_wifi_status));
-  strncpy(uiEez.set_mqtt_host, "—", sizeof(uiEez.set_mqtt_host));
+  strncpy(uiEez.set_mqtt_host, "---", sizeof(uiEez.set_mqtt_host));
   strncpy(uiEez.set_mqtt_status, "Odpojeno", sizeof(uiEez.set_mqtt_status));
-  strncpy(uiEez.set_sys_hint, "Cekam na senzor...", sizeof(uiEez.set_sys_hint));
+  uiEez.porucha_text[0] = '\0';
+  strncpy(uiEez.set_sys_hint, "Čekám na senzor...", sizeof(uiEez.set_sys_hint));
   uiEez.set_sys_hint[sizeof(uiEez.set_sys_hint) - 1] = '\0';
 }
 
@@ -173,6 +175,7 @@ void uiEezSyncFromBus() {
   }
 
   lgModelUnlock();
+  uiEezRefreshPorucha();
 }
 
 uint32_t uiEezTeplotaVodySetColor(void) {

@@ -62,6 +62,21 @@ int climateRoomOutdoorRssi(void);
 void climateRoomGetLastRoomResponse(char* buf, size_t len);
 void climateRoomGetLastOutdoorResponse(char* buf, size_t len);
 
+/** OTA bridge: Tab5 pošle Wi‑Fi creds přes UART, bridge spustí ArduinoOTA. */
+typedef enum {
+  CLIMATE_BRIDGE_OTA_IDLE = 0,
+  CLIMATE_BRIDGE_OTA_CONNECTING,
+  CLIMATE_BRIDGE_OTA_READY,
+  CLIMATE_BRIDGE_OTA_FAIL,
+} ClimateBridgeOtaState;
+
+void climateRoomBridgeOtaStart(void);
+bool climateRoomBridgeOtaStartWith(const char* ssid, const char* pass);
+void climateRoomBridgeOtaStop(void);
+ClimateBridgeOtaState climateRoomBridgeOtaState(void);
+const char* climateRoomBridgeOtaIp(void);
+const char* climateRoomBridgeOtaHost(void);
+
 void climateRoomStatusText(char* buf, size_t buflen);
 
 #ifdef __cplusplus

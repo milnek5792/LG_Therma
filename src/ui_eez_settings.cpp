@@ -133,7 +133,7 @@ void styleConnectBtn(lv_obj_t* btn, bool enabled, bool connected) {
   lv_obj_set_style_bg_opa(btn, (enabled || connected) ? 255 : 180, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_t* lbl = lv_obj_get_child(btn, 0);
   if (lbl) {
-    setLabelIfChanged(lbl, connected ? "MQTT OK" : "Pripojit MQTT");
+    setLabelIfChanged(lbl, connected ? "MQTT OK" : "Připojit MQTT");
   }
 }
 
@@ -172,7 +172,7 @@ void updateMeterButtons() {
     ClimateRoomFound f{};
     char line[24];
     if (climateRoomGetFound(idx, &f) && f.valid) {
-      snprintf(line, sizeof(line), "Tepl.%u %.0fC", (unsigned)idx, (double)f.temp_c);
+      snprintf(line, sizeof(line), "Tepl.%u %.0f °C", (unsigned)idx, (double)f.temp_c);
     } else {
       snprintf(line, sizeof(line), "Tepl.%u", (unsigned)idx);
     }
@@ -193,23 +193,45 @@ void updateBlePanelLabels() {
   climateRoomGetConfiguredOutdoorMac(outMac, sizeof(outMac));
 
   char line[96];
-  if (climateRoomIsBusy()) {
+  const ClimateBridgeOtaState otaSt = climateRoomBridgeOtaState();
+  if (otaSt == CLIMATE_BRIDGE_OTA_CONNECTING) {
+    snprintf(line, sizeof(line), "Bridge OTA: připojuji Wi-Fi...");
+  } else if (otaSt == CLIMATE_BRIDGE_OTA_READY) {
+    snprintf(line, sizeof(line), "Bridge OTA: %s (%s)",
+             climateRoomBridgeOtaHost(), climateRoomBridgeOtaIp());
+  } else if (otaSt == CLIMATE_BRIDGE_OTA_FAIL) {
+    snprintf(line, sizeof(line), "Bridge OTA selhalo - zkontroluj Wi-Fi Tab5");
+  } else if (climateRoomIsBusy()) {
     snprintf(line, sizeof(line), "Skenuji SwitchBot...");
   } else {
     const int n = climateRoomFoundCount();
     // Po skenu vždy nabídni výběr (i když už máme teplotu z dřívějšího MAC)
     if (n > 0) {
-      snprintf(line, sizeof(line), "Nalezeno %d — vyber Tepl.1-%d", n,
+      snprintf(line, sizeof(line), "Nalezeno %d - vyber Tepl.1-%d", n,
                n > 3 ? 3 : n);
     } else if (climateRoomIsOk() && climateRoomOutdoorIsOk()) {
-      snprintf(line, sizeof(line), "Pokoj %.1f C · Venku %.1f C",
-               (double)climateRoomTempC(), (double)climateRoomOutdoorTempC());
+      const int outBat = climateRoomOutdoorBatteryPct();
+      if (outBat >= 0) {
+        snprintf(line, sizeof(line), "Pokoj %.1f °C · Venku %.1f °C (bat %d%%)",
+                 (double)climateRoomTempC(), (double)climateRoomOutdoorTempC(),
+                 outBat);
+      } else {
+        snprintf(line, sizeof(line), "Pokoj %.1f °C · Venku %.1f °C",
+                 (double)climateRoomTempC(), (double)climateRoomOutdoorTempC());
+      }
     } else if (climateRoomIsOk()) {
-      snprintf(line, sizeof(line), "Pokoj %.1f C", (double)climateRoomTempC());
+      snprintf(line, sizeof(line), "Pokoj %.1f °C", (double)climateRoomTempC());
     } else if (climateRoomOutdoorIsOk()) {
-      snprintf(line, sizeof(line), "Venku %.1f C", (double)climateRoomOutdoorTempC());
+      const int outBat = climateRoomOutdoorBatteryPct();
+      const int outRssi = climateRoomOutdoorRssi();
+      if (outBat >= 0) {
+        snprintf(line, sizeof(line), "Venku %.1f °C · bat %d%% · rssi %d",
+                 (double)climateRoomOutdoorTempC(), outBat, outRssi);
+      } else {
+        snprintf(line, sizeof(line), "Venku %.1f °C", (double)climateRoomOutdoorTempC());
+      }
     } else {
-      snprintf(line, sizeof(line), "Cekam data — Skenuj / MAC");
+      snprintf(line, sizeof(line), "Čekám na data - Skenuj / MAC");
     }
   }
   setLabelIfChanged(settingsObj.lbl_sys_hint, line);
@@ -232,7 +254,13 @@ void updateBlePanelLabels() {
                      climateRoomOutdoorIsOk() ? kColText : kColMuted);
 
   uint32_t col = kColMuted;
-  if (climateRoomIsOk() || climateRoomOutdoorIsOk()) {
+  if (otaSt == CLIMATE_BRIDGE_OTA_READY) {
+    col = kColGreen;
+  } else if (otaSt == CLIMATE_BRIDGE_OTA_CONNECTING) {
+    col = kColOrange;
+  } else if (otaSt == CLIMATE_BRIDGE_OTA_FAIL) {
+    col = kColOrange;
+  } else if (climateRoomIsOk() || climateRoomOutdoorIsOk()) {
     col = kColGreen;
   } else if (climateRoomIsBusy()) {
     col = kColOrange;
@@ -246,7 +274,7 @@ void updateSleepLabels() {
     lv_obj_t* lbl = lv_obj_get_child(settingsObj.btn_sleep, 0);
     if (lbl) {
       char line[32];
-      snprintf(line, sizeof(line), "Usinani: %s", uiDisplaySleepTimeoutLabel());
+      snprintf(line, sizeof(line), "Usínání: %s", uiDisplaySleepTimeoutLabel());
       setLabelIfChanged(lbl, line);
     }
   }
@@ -292,8 +320,8 @@ void uiSettingsCreate() {
   const int titleW = colW - toggleW - 3 * kPad;
 
   settingsObj.btn_back = makeButton(
-      scr, kMargin, 4, 120, kBtnH, "<- ZPET", action_akce_zpet, 0x48484Fu);
-  settingsObj.lbl_title = makeLabel(scr, 0, 10, 0, "NASTAVENI", kColText);
+      scr, kMargin, 4, 120, kBtnH, "<- ZPĚT", action_akce_zpet, 0x48484Fu);
+  settingsObj.lbl_title = makeLabel(scr, 0, 10, 0, "NASTAVENÍ", kColText);
   lv_obj_set_style_text_font(settingsObj.lbl_title, kFontTitle, LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_set_style_align(settingsObj.lbl_title, LV_ALIGN_TOP_MID, LV_PART_MAIN | LV_STATE_DEFAULT);
   char versionText[24];
@@ -311,7 +339,7 @@ void uiSettingsCreate() {
   settingsObj.lbl_wifi_status =
       makeLabel(settingsObj.panel_wifi, kPad, kBodyY, labelW, "Stav: ---", kColText);
   settingsObj.lbl_wifi_ssid =
-      makeLabel(settingsObj.panel_wifi, kPad, kBodyY + kLine, labelW, "Sit: ---", kColMuted);
+      makeLabel(settingsObj.panel_wifi, kPad, kBodyY + kLine, labelW, "Síť: ---", kColMuted);
   settingsObj.lbl_wifi_ip =
       makeLabel(settingsObj.panel_wifi, kPad, kBodyY + 2 * kLine, labelW, "IP: ---", kColMuted);
   settingsObj.btn_wifi_toggle = makeButton(
@@ -320,10 +348,10 @@ void uiSettingsCreate() {
   const int wifiBtnY = topH - kBtnH - kPad;
   settingsObj.btn_wifi_connect = makeButton(
       settingsObj.panel_wifi, kPad, wifiBtnY, btnW, kBtnH,
-      "Pripojit", action_akce_wifi_connect, kColAccent);
+      "Připojit", action_akce_wifi_connect, kColAccent);
   settingsObj.btn_wifi_edit = makeButton(
       settingsObj.panel_wifi, kPad + btnW + kGap, wifiBtnY, btnW, kBtnH,
-      "Nastavit sit", action_akce_wifi_edit, kColPurple);
+      "Nastavit síť", action_akce_wifi_edit, kColPurple);
 
   settingsObj.panel_mqtt = makePanel(scr, kMargin + colW + kGap, topY, colW, topH);
   settingsObj.lbl_mqtt_title =
@@ -337,7 +365,7 @@ void uiSettingsCreate() {
       "Vypnuto", action_akce_mqtt_toggle, kColAccent);
   settingsObj.btn_mqtt_connect = makeButton(
       settingsObj.panel_mqtt, kPad, topH - kBtnH - kPad, 180, kBtnH,
-      "Pripojit MQTT", action_akce_mqtt_connect, kColAccent);
+      "Připojit MQTT", action_akce_mqtt_connect, kColAccent);
 
   const int dispY = topY + topH + kGap;
   const int dispH = 58;
@@ -369,7 +397,7 @@ void uiSettingsCreate() {
   settingsObj.lbl_sleep = nullptr;
   settingsObj.btn_sleep = makeButton(
       settingsObj.panel_display, contentW - kPad - sleepBtnW, 10, sleepBtnW, kBtnH,
-      "Usinani: 2 min", onSleepCycle, kColPurple);
+      "Usínání: 2 min", onSleepCycle, kColPurple);
 
   const int sysY = dispY + dispH + kGap;
   const int sysH = kH - sysY - kMargin;
@@ -390,35 +418,38 @@ void uiSettingsCreate() {
   settingsObj.lbl_sys_title =
       makeLabel(settingsObj.panel_ble, kPad, kTitleY, bleW - 2 * kPad, "SwitchBot", kColOrange);
   settingsObj.lbl_sys_hint = makeLabel(settingsObj.panel_ble, kPad, kBodyY,
-                                       bleW - 2 * kPad, "Cekam na H2...", kColMuted);
+                                       bleW - 2 * kPad, "Čekám na H2...", kColMuted);
   lv_label_set_long_mode(settingsObj.lbl_sys_hint, LV_LABEL_LONG_WRAP);
 
   settingsObj.lbl_mac_room =
       makeLabel(settingsObj.panel_ble, kPad, kBodyY + kLine, bleW - 2 * kPad,
-                "Pokoj: —", kColMuted);
+                "Pokoj: ---", kColMuted);
   settingsObj.lbl_mac_out =
       makeLabel(settingsObj.panel_ble, kPad, kBodyY + 2 * kLine, bleW - 2 * kPad,
-                "Venku: —", kColMuted);
+                "Venku: ---", kColMuted);
   settingsObj.lbl_rsp_room =
       makeLabel(settingsObj.panel_ble, kPad, kBodyY + 3 * kLine, bleW - 2 * kPad,
-                "—", kColMuted);
+                "---", kColMuted);
   lv_label_set_long_mode(settingsObj.lbl_rsp_room, LV_LABEL_LONG_WRAP);
   settingsObj.lbl_rsp_out =
       makeLabel(settingsObj.panel_ble, kPad, kBodyY + 4 * kLine, bleW - 2 * kPad,
-                "—", kColMuted);
+                "---", kColMuted);
   lv_label_set_long_mode(settingsObj.lbl_rsp_out, LV_LABEL_LONG_WRAP);
 
   const int row2Y = bleH - kBtnH - kPad;
   const int row1Y = row2Y - kBtnH - kGap;
-  const int btnHalfW = (bleW - 2 * kPad - kGap) / 2;
+  const int btnThirdW = (bleW - 2 * kPad - 2 * kGap) / 3;
   const int pickW = (bleW - 2 * kPad - 2 * kGap) / 3;
 
   settingsObj.btn_ble = makeButton(
-      settingsObj.panel_ble, kPad, row1Y, btnHalfW, kBtnH,
+      settingsObj.panel_ble, kPad, row1Y, btnThirdW, kBtnH,
       "Skenuj", action_akce_settings_ble, kColPurple);
   settingsObj.btn_mac = makeButton(
-      settingsObj.panel_ble, kPad + btnHalfW + kGap, row1Y, btnHalfW, kBtnH,
+      settingsObj.panel_ble, kPad + btnThirdW + kGap, row1Y, btnThirdW, kBtnH,
       "MAC", action_akce_settings_ble_mac, kColAccent);
+  settingsObj.btn_bridge_ota = makeButton(
+      settingsObj.panel_ble, kPad + 2 * (btnThirdW + kGap), row1Y, btnThirdW,
+      kBtnH, "OTA", action_akce_settings_bridge_ota, kColGreen);
   settingsObj.btn_meter1 = makeButton(
       settingsObj.panel_ble, kPad, row2Y, pickW, kBtnH,
       "Tepl.1", action_akce_settings_meter1, kColAccent);
@@ -440,9 +471,9 @@ void uiSettingsCreate() {
       "Plan", action_akce_settings_plan, kColPurple);
   settingsObj.btn_servis = makeButton(
       settingsObj.panel_sys, navColX + navBtnW + kGap, navY, navBtnW, kNavBtnH,
-      "Regulator", action_akce_settings_servis, kColPurple);
+      "Regulátor", action_akce_settings_servis, kColPurple);
 
-  strncpy(uiEez.set_sys_hint, "Cekam na H2...", sizeof(uiEez.set_sys_hint) - 1);
+  strncpy(uiEez.set_sys_hint, "Čekám na H2...", sizeof(uiEez.set_sys_hint) - 1);
   uiEez.set_sys_hint[sizeof(uiEez.set_sys_hint) - 1] = '\0';
 
   updateBrightnessLabel();
@@ -462,7 +493,7 @@ void uiSettingsTick() {
   setLabelIfChanged(settingsObj.lbl_wifi_status, line);
   setTextColorCached(settingsObj.lbl_wifi_status, get_var_sig_wifi_color());
 
-  snprintf(line, sizeof(line), "Sit: %s", uiEez.set_wifi_ssid);
+  snprintf(line, sizeof(line), "Síť: %s", uiEez.set_wifi_ssid);
   setLabelIfChanged(settingsObj.lbl_wifi_ssid, line);
 
   snprintf(line, sizeof(line), "IP: %s", uiEez.set_wifi_ip);
@@ -491,6 +522,18 @@ void uiSettingsTick() {
   }
   updateBrightnessLabel();
   updateSleepLabels();
+}
+
+void uiSettingsShowBridgeOtaHint(const char* hint) {
+  if (!hint) {
+    return;
+  }
+  strncpy(uiEez.set_sys_hint, hint, sizeof(uiEez.set_sys_hint) - 1);
+  uiEez.set_sys_hint[sizeof(uiEez.set_sys_hint) - 1] = '\0';
+  if (settingsObj.lbl_sys_hint) {
+    setLabelIfChanged(settingsObj.lbl_sys_hint, hint);
+    setTextColorCached(settingsObj.lbl_sys_hint, kColOrange);
+  }
 }
 
 void uiSettingsShowScanning() {
