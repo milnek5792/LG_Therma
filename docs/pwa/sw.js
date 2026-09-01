@@ -1,4 +1,4 @@
-const CACHE = 'lg-therma-pwa-v19';
+const CACHE = 'lg-therma-pwa-v21';
 const ASSETS = [
   './',
   './index.html',
@@ -24,25 +24,27 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+function networkFirst(request) {
+  return fetch(request)
+    .then((res) => {
+      const copy = res.clone();
+      caches.open(CACHE).then((cache) => cache.put(request, copy));
+      return res;
+    })
+    .catch(() => caches.match(request));
+}
+
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') {
     return;
   }
   const url = new URL(event.request.url);
-  const isAppAsset = url.pathname.endsWith('.js') || url.pathname.endsWith('.css');
+  const isAppAsset =
+    url.pathname.endsWith('.js') ||
+    url.pathname.endsWith('.css') ||
+    url.pathname.endsWith('.html') ||
+    url.pathname.endsWith('/');
   if (isAppAsset) {
-    event.respondWith(
-      fetch(event.request)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((cache) => cache.put(event.request, copy));
-          return res;
-        })
-        .catch(() => caches.match(event.request)),
-    );
-    return;
+    event.respondWith(networkFirst(event.request));
   }
-  event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request)),
-  );
 });

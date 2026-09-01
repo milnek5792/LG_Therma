@@ -151,6 +151,19 @@ function formatTemp(v, decimals = 1) {
   return decimals === 0 ? String(Math.round(v)) : v.toFixed(decimals);
 }
 
+function hasBroker() {
+  return mqtt.isConnected();
+}
+
+function hasLiveTelemetry() {
+  return hasBroker() && state.tab5Online;
+}
+
+function displaySetpoint() {
+  const sp = hasLiveTelemetry() ? state.setpoint : null;
+  return state.autoMode ? formatTemp(sp, 1) : formatTemp(sp, 0);
+}
+
 function requireMqtt() {
   if (mqtt.isConnected()) {
     return true;
@@ -164,6 +177,11 @@ function applyMqttEvent(ev) {
     state.mqttStatus = ev.status;
     state.mqttError = ev.error || '';
     state.mqttConnected = ev.status === 'connected';
+    if (ev.status === 'connecting') {
+      state.teleFresh = false;
+      state.tab5Online = false;
+      state.setpoint = null;
+    }
     render();
     return;
   }
@@ -221,6 +239,7 @@ function applyMqttEvent(ev) {
       if (!p.tab5Online) {
         state.teleFresh = false;
         state.setpoint = null;
+        state.temps = { room: null, outdoor: null, inlet: null, outlet: null };
         state.poruchaText = '';
         state.alarm = false;
         state.faultVisible = false;
@@ -228,6 +247,9 @@ function applyMqttEvent(ev) {
         clearTimeout(faultTimer);
         faultPending = null;
       }
+    }
+    if (!state.mqttConnected || !state.tab5Online) {
+      state.setpoint = null;
     }
     scheduleFaultBanner();
     render();
@@ -350,19 +372,16 @@ function render() {
     title.className = 'sp-title sp-water';
   }
 
-  const showTelemetry =
-    state.mqttConnected && state.tab5Online && state.teleFresh;
   const spVal = $('#sp-value');
-  spVal.textContent = state.autoMode
-    ? formatTemp(showTelemetry ? state.setpoint : null, 1)
-    : formatTemp(showTelemetry ? state.setpoint : null, 0);
+  spVal.textContent = displaySetpoint();
 
   $('#water-sp').classList.add('hidden');
 
-  $('#temp-room').textContent = formatTemp(state.temps.room, 1);
-  $('#temp-outdoor').textContent = formatTemp(state.temps.outdoor, 1);
-  $('#temp-inlet').textContent = formatTemp(state.temps.inlet, 0);
-  $('#temp-outlet').textContent = formatTemp(state.temps.outlet, 0);
+  const live = hasLiveTelemetry();
+  $('#temp-room').textContent = formatTemp(live ? state.temps.room : null, 1);
+  $('#temp-outdoor').textContent = formatTemp(live ? state.temps.outdoor : null, 1);
+  $('#temp-inlet').textContent = formatTemp(live ? state.temps.inlet : null, 0);
+  $('#temp-outlet').textContent = formatTemp(live ? state.temps.outlet : null, 0);
 
   renderLeds();
 
