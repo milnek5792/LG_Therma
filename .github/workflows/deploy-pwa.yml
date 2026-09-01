@@ -2,11 +2,7 @@ name: Deploy PWA prototype
 
 on:
   push:
-    branches: [main, feature/tab5-ui-ota-polish]
-    paths:
-      - 'docs/pwa/**'
-      - 'docs/index.html'
-      - '.github/workflows/deploy-pwa.yml'
+    branches: [main]
   workflow_dispatch:
 
 permissions:

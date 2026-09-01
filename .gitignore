@@ -14,3 +14,8 @@
 
 # Secrets (volitelně)
 # include/wifi_config.h
+
+# Osobní soubory / fotky mimo projekt
+*.jpeg
+*.jpg
+WhatsApp*
