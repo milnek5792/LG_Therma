@@ -1,11 +1,7 @@
 /** MQTT bridge — lgtherma/* topicy kompatibilní s Tab5 (net_mqtt_client.cpp). */
 
 /** Retained zprávy ignorované jen krátce po připojení (kvůli blikání poruchy). */
-const HYDRATE_SKIP_RETAINED = new Set([
-  'tele/alarm',
-  'tele/porucha',
-  'tele/temp_set',
-]);
+const HYDRATE_SKIP_RETAINED = new Set(['tele/alarm', 'tele/porucha']);
 const TELE_NA = '___';
 
 const TELE_SUFFIXES = [

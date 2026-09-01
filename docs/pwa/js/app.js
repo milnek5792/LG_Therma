@@ -151,17 +151,17 @@ function formatTemp(v, decimals = 1) {
   return decimals === 0 ? String(Math.round(v)) : v.toFixed(decimals);
 }
 
-function hasBroker() {
+function brokerConnected() {
   return mqtt.isConnected();
 }
 
-function hasLiveTelemetry() {
-  return hasBroker() && state.tab5Online;
-}
-
 function displaySetpoint() {
-  const sp = hasLiveTelemetry() ? state.setpoint : null;
-  return state.autoMode ? formatTemp(sp, 1) : formatTemp(sp, 0);
+  if (!brokerConnected()) {
+    return '—';
+  }
+  return state.autoMode
+    ? formatTemp(state.setpoint, 1)
+    : formatTemp(state.setpoint, 0);
 }
 
 function requireMqtt() {
@@ -247,9 +247,6 @@ function applyMqttEvent(ev) {
         clearTimeout(faultTimer);
         faultPending = null;
       }
-    }
-    if (!state.mqttConnected || !state.tab5Online) {
-      state.setpoint = null;
     }
     scheduleFaultBanner();
     render();
@@ -377,7 +374,7 @@ function render() {
 
   $('#water-sp').classList.add('hidden');
 
-  const live = hasLiveTelemetry();
+  const live = brokerConnected();
   $('#temp-room').textContent = formatTemp(live ? state.temps.room : null, 1);
   $('#temp-outdoor').textContent = formatTemp(live ? state.temps.outdoor : null, 1);
   $('#temp-inlet').textContent = formatTemp(live ? state.temps.inlet : null, 0);
