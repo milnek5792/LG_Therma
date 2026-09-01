@@ -16,7 +16,7 @@ const state = {
   teleFresh: false,
   watchActive: false,
   autoMode: true,
-  setpoint: 22.5,
+  setpoint: null,
   power: false,
   pump: false,
   compressor: false,
@@ -48,7 +48,7 @@ function resetTelemetryState() {
   state.teleFresh = false;
   state.watchActive = false;
   state.autoMode = true;
-  state.setpoint = 22.5;
+  state.setpoint = null;
   state.power = false;
   state.pump = false;
   state.compressor = false;
@@ -220,6 +220,7 @@ function applyMqttEvent(ev) {
       state.tab5Online = p.tab5Online;
       if (!p.tab5Online) {
         state.teleFresh = false;
+        state.setpoint = null;
         state.poruchaText = '';
         state.alarm = false;
         state.faultVisible = false;
@@ -349,10 +350,12 @@ function render() {
     title.className = 'sp-title sp-water';
   }
 
+  const showTelemetry =
+    state.mqttConnected && state.tab5Online && state.teleFresh;
   const spVal = $('#sp-value');
   spVal.textContent = state.autoMode
-    ? formatTemp(state.setpoint, 1)
-    : formatTemp(state.setpoint, 0);
+    ? formatTemp(showTelemetry ? state.setpoint : null, 1)
+    : formatTemp(showTelemetry ? state.setpoint : null, 0);
 
   $('#water-sp').classList.add('hidden');
 

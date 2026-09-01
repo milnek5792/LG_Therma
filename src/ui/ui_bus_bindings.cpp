@@ -80,6 +80,10 @@ bool drzenyZapnuty() {
 }
 
 void provedStop() {
+  if (lgZapisBezi()) {
+    ESP_LOGW(TAG, "STOP odlozen — probiha LIN sekvence");
+  }
+
   lgModelLock();
   const uint8_t t = aktualniCilovaTeplota();
   lgModelUnlock();

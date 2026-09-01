@@ -26,8 +26,31 @@ void lgBusInit() {
                 LG_MBUS_RX_PIN, LG_MBUS_TX_PIN, (unsigned)LG_BAUDRATE);
 }
 
+/** START/STOP z HMI/MQTT/plánu — hned v LIN tasku (nečekat na další A0). */
+static void lgZpracujPozadavekStartStop() {
+  if (!pozadavekNaZapis || !pozadavekZmenaStartu) {
+    return;
+  }
+  if (lgZapisAktivni()) {
+    return;
+  }
+
+  lgModelLock();
+  const bool zapProZapis = cilovyZapnutoTab5;
+  const uint8_t teplota = novaCilovaTeplota;
+  pozadavekNaZapis = false;
+  pozadavekZmenaStartu = false;
+  if (zapProZapis) {
+    lgZapisPovolenStart = true;
+  }
+  lgModelUnlock();
+
+  provedZapisTeploty(teplota, zapProZapis, true);
+}
+
 void lgBusTick() {
   lgObsluhaCekaniOrig();
+  lgZpracujPozadavekStartStop();
   lgZapisObsluha();
 
   while (LG_Serial.available() > 0) {
@@ -77,18 +100,14 @@ void lgBusTick() {
       lgModelUnlock();
     }
 
-    if (bufferLg[0] == 0xA0 && pozadavekNaZapis) {
+    // Změna jen setpointu (bez START/STOP) — synchronizace s A0.
+    if (bufferLg[0] == 0xA0 && pozadavekNaZapis && !pozadavekZmenaStartu) {
       lgModelLock();
-      const bool zmenaStartu = pozadavekZmenaStartu;
-      const bool zapProZapis = zmenaStartu ? cilovyZapnutoTab5 : stavZapnuto;
+      const bool zapProZapis = stavZapnuto;
       const uint8_t teplota = novaCilovaTeplota;
       pozadavekNaZapis = false;
-      pozadavekZmenaStartu = false;
-      if (zmenaStartu && zapProZapis) {
-        lgZapisPovolenStart = true;
-      }
       lgModelUnlock();
-      provedZapisTeploty(teplota, zapProZapis, zmenaStartu);
+      provedZapisTeploty(teplota, zapProZapis, false);
     }
 
     indexLg = 0;

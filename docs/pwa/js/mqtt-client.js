@@ -263,10 +263,7 @@ export class MqttBridge {
         break;
       }
       case 'tele/temp_set': {
-        const v = parseTemp(msg);
-        if (v !== null) {
-          patch.setpoint = v;
-        }
+        patch.setpoint = parseTemp(msg);
         break;
       }
       case 'tele/reg_mode':
