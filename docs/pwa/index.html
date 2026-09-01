@@ -14,10 +14,26 @@
 <body>
   <div id="app" class="app">
     <header class="topbar">
-      <span id="clock" class="clock">--:--</span>
+      <div class="brand" aria-label="LG Therma">
+        <svg class="brand-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="5" y="10" width="22" height="16" rx="3" stroke="currentColor" stroke-width="1.5"/>
+          <circle cx="16" cy="18" r="5.5" stroke="#0a84ff" stroke-width="1.5"/>
+          <path d="M16 12.5v11M10.5 18h11" stroke="#0a84ff" stroke-width="1" opacity="0.45"/>
+          <path d="M9 7h14" stroke="#ff9f0a" stroke-width="2" stroke-linecap="round"/>
+          <path d="M11 7v3M21 7v3" stroke="#ff9f0a" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <span class="brand-text">LG Therma</span>
+      </div>
       <div class="topbar-status">
-        <span id="mqtt-pill" class="pill pill-muted">MQTT ---</span>
-        <span id="lin-pill" class="pill pill-muted">LIN ---</span>
+        <span id="sig-mqtt" class="sig sig-off" role="status" aria-label="MQTT: odpojeno">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M7 18a5 5 0 0 1 10 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            <path d="M4.5 14.5a9 9 0 0 1 15 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            <path d="M2 11a13 13 0 0 1 20 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            <circle cx="12" cy="18" r="1.6" fill="currentColor"/>
+          </svg>
+        </span>
+        <span id="sig-lin" class="sig sig-label sig-off" role="status" aria-label="LIN: odpojeno">LIN</span>
       </div>
     </header>
 
@@ -25,8 +41,6 @@
       <strong>Poruchové hlášení</strong>
       <span id="fault-text"></span>
     </div>
-
-    <p class="demo-badge">Prototyp — demo data, bez skutečného MQTT</p>
 
     <!-- DOMŮ -->
     <main id="view-home" class="view view-active">
@@ -43,16 +57,6 @@
           </div>
           <button type="button" class="btn-round" id="btn-plus" aria-label="Zvýšit">+</button>
         </div>
-        <div class="mode-row">
-          <button type="button" class="chip chip-active" id="btn-mode-auto">Auto (pokoj)</button>
-          <button type="button" class="chip" id="btn-mode-water">Výstupní T (voda)</button>
-        </div>
-      </section>
-
-      <section class="plan-strip" aria-label="Stav plánu (jen náhled)">
-        <div class="plan-strip-title" id="plan-title">TÝDENNÍ PLÁN AKTIVNÍ</div>
-        <div class="plan-strip-text" id="plan-text">VT2: běžný režim</div>
-        <p class="plan-hint">Plán a regulátor se nastavují pouze na Tab5.</p>
       </section>
 
       <section class="temp-grid">
@@ -75,29 +79,29 @@
       </section>
 
       <section class="status-grid" aria-label="Stav zařízení">
-        <div class="status-item" data-key="power">
-          <span class="led" id="led-power"></span>
-          <span>Zapnuto</span>
+        <div class="stat stat-warn" id="stat-power" title="Zapnuto" aria-label="Zapnuto: vypnuto">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 3v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            <path d="M8.5 4.5a7 7 0 1 0 7 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
         </div>
-        <div class="status-item" data-key="pump">
-          <span class="led" id="led-pump"></span>
-          <span>Oběhové čerpadlo</span>
+        <div class="stat" id="stat-pump" title="Čerpadlo" aria-label="Čerpadlo: vypnuto">
+          <span class="stat-glyph" aria-hidden="true">🔄</span>
         </div>
-        <div class="status-item" data-key="compressor">
-          <span class="led" id="led-compressor"></span>
-          <span>Kompresor</span>
+        <div class="stat" id="stat-compressor" title="Kompresor" aria-label="Kompresor: vypnuto">
+          <span class="stat-glyph" aria-hidden="true">🌀</span>
         </div>
-        <div class="status-item" data-key="defrost">
-          <span class="led led-warn" id="led-defrost"></span>
-          <span>Odmrazování</span>
+        <div class="stat stat-warn" id="stat-defrost" title="Odmrazování" aria-label="Odmrazování: vypnuto">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M8.5 4.5v5.2M8.5 4.5l1.8 1.6M8.5 9.7l1.8-1.6" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/>
+            <path d="M5.8 7.1h5.4M5.8 7.1l1.9 1.1M10.7 7.1l-1.9 1.1" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/>
+            <path d="M15.8 9c0 2.1-3.3 4.3-3.3 6.8a3.3 3.3 0 0 0 6.6 0C19.1 13.3 15.8 11.1 15.8 9z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+          </svg>
         </div>
-        <div class="status-item" data-key="elec">
-          <span class="led led-warn" id="led-elec"></span>
-          <span>Přídavné el. topení</span>
-        </div>
-        <div class="status-item" data-key="quiet">
-          <span class="led" id="led-quiet"></span>
-          <span>Tichý režim</span>
+        <div class="stat stat-warn" id="stat-elec" title="El. topení" aria-label="El. topení: vypnuto">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M13 2L6 14h6l-1 8 7-12h-6l1-8z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          </svg>
         </div>
       </section>
 
@@ -105,8 +109,6 @@
         <button type="button" class="btn-power btn-start" id="btn-start">START</button>
         <button type="button" class="btn-power btn-stop" id="btn-stop">STOP</button>
       </section>
-
-      <button type="button" class="btn-quiet-toggle" id="btn-quiet">Tichý režim: VYP</button>
     </main>
 
     <!-- NASTAVENÍ -->
@@ -137,18 +139,8 @@
           <button type="button" class="btn-primary" id="btn-connect">Připojit</button>
           <button type="button" class="btn-secondary" id="btn-disconnect" disabled>Odpojit</button>
         </div>
+        <p id="cfg-status" class="cfg-status" role="status"></p>
       </form>
-
-      <section class="settings-info">
-        <h3>Ovládací topicy (náhled)</h3>
-        <ul class="topic-list">
-          <li><code>…/cmd/watch</code> ON při otevření aplikace</li>
-          <li><code>…/cmd/setpoint</code> hodnota nebo + / −</li>
-          <li><code>…/cmd/mode</code> room / water</li>
-          <li><code>…/cmd/power</code> ON / OFF</li>
-          <li><code>…/cmd/quiet</code> ON / OFF</li>
-        </ul>
-      </section>
     </main>
 
     <nav class="bottom-nav" aria-label="Hlavní navigace">
@@ -163,6 +155,7 @@
     </nav>
   </div>
 
-  <script src="js/app.js"></script>
+  <script src="https://unpkg.com/mqtt@5.10.4/dist/mqtt.min.js"></script>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>

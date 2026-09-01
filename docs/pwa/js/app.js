@@ -1,32 +1,134 @@
-/** LG Therma PWA — klikatelný prototyp (demo data). */
+/** LG Therma PWA — ovládání přes MQTT (WSS). */
+
+import { MqttBridge } from './mqtt-client.js';
 
 const STORAGE_KEY = 'lgtherma-pwa-settings';
+const MQTT_AUTO_KEY = 'lgtherma-pwa-mqtt-auto';
+
+const DEFAULT_WSS =
+  'wss://n9e16b3c.ala.eu-central-1.emqxsl.com:8084/mqtt';
 
 const state = {
-  connected: false,
+  mqttConnected: false,
+  mqttStatus: 'idle',
+  mqttError: '',
+  tab5Online: false,
+  teleFresh: false,
+  watchActive: false,
   autoMode: true,
   setpoint: 22.5,
-  waterSp: 38,
   power: false,
-  quiet: false,
   pump: false,
   compressor: false,
   defrost: false,
   elec: false,
-  lin: true,
-  fault: false,
+  lin: false,
+  alarm: false,
+  poruchaText: '',
+  faultVisible: false,
   faultText: '',
   temps: {
-    room: 21.3,
-    outdoor: 8.2,
-    inlet: 35,
-    outlet: 42,
+    room: null,
+    outdoor: null,
+    inlet: null,
+    outlet: null,
   },
-  planTitle: 'TÝDENNÍ PLÁN AKTIVNÍ',
-  planText: 'VT2: běžný režim',
 };
 
 const $ = (sel) => document.querySelector(sel);
+const mqtt = new MqttBridge(applyMqttEvent);
+
+const FAULT_SHOW_MS = 2000;
+const FAULT_HIDE_MS = 800;
+let faultTimer = null;
+let faultPending = null;
+
+function resetTelemetryState() {
+  state.tab5Online = false;
+  state.teleFresh = false;
+  state.watchActive = false;
+  state.autoMode = true;
+  state.setpoint = 22.5;
+  state.power = false;
+  state.pump = false;
+  state.compressor = false;
+  state.defrost = false;
+  state.elec = false;
+  state.lin = false;
+  state.alarm = false;
+  state.poruchaText = '';
+  state.faultVisible = false;
+  state.faultText = '';
+  state.temps = { room: null, outdoor: null, inlet: null, outlet: null };
+  clearTimeout(faultTimer);
+  faultPending = null;
+}
+
+function isLinOk() {
+  if (state.lin) {
+    return true;
+  }
+  if (!state.teleFresh) {
+    return false;
+  }
+  return (
+    state.temps.inlet != null ||
+    state.temps.outdoor != null ||
+    state.pump ||
+    state.compressor
+  );
+}
+
+function scheduleFaultBanner() {
+  if (!state.tab5Online || !state.teleFresh) {
+    state.faultVisible = false;
+    state.faultText = '';
+    return;
+  }
+
+  const text = state.poruchaText.trim();
+  const wantShow = text.length > 0 || state.alarm;
+  const nextText = text || (state.alarm ? 'Alarm hlášen přes MQTT' : '');
+
+  if (wantShow && state.faultVisible && state.faultText !== nextText && nextText) {
+    state.faultText = nextText;
+    return;
+  }
+
+  if (faultPending && faultPending.wantShow === wantShow && faultPending.text === nextText) {
+    return;
+  }
+
+  clearTimeout(faultTimer);
+  faultPending = { wantShow, text: nextText };
+
+  faultTimer = setTimeout(() => {
+    faultPending = null;
+    if (!state.tab5Online || !state.teleFresh) {
+      state.faultVisible = false;
+      state.faultText = '';
+      renderFaultBanner();
+      return;
+    }
+    state.faultVisible = wantShow;
+    state.faultText = wantShow ? nextText : '';
+    renderFaultBanner();
+  }, wantShow ? FAULT_SHOW_MS : FAULT_HIDE_MS);
+}
+
+function renderFaultBanner() {
+  const faultBanner = $('#fault-banner');
+  if (!faultBanner) {
+    return;
+  }
+  if (state.faultVisible && state.faultText) {
+    faultBanner.classList.remove('hidden');
+    $('#fault-text').textContent = state.faultText;
+  } else {
+    faultBanner.classList.add('hidden');
+    $('#fault-text').textContent = '';
+  }
+}
 
 function loadSettings() {
   try {
@@ -38,82 +140,174 @@ function loadSettings() {
 }
 
 function saveSettings(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  const prev = loadSettings();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...prev, ...data }));
 }
 
-function formatClock() {
-  const d = new Date();
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${hh}:${mm}`;
-}
-
-function clampSetpoint(v) {
-  if (state.autoMode) {
-    return Math.min(24, Math.max(18, Math.round(v * 10) / 10));
+function formatTemp(v, decimals = 1) {
+  if (v === null || v === undefined || Number.isNaN(v)) {
+    return '—';
   }
-  return Math.min(55, Math.max(20, Math.round(v)));
+  return decimals === 0 ? String(Math.round(v)) : v.toFixed(decimals);
+}
+
+function requireMqtt() {
+  if (mqtt.isConnected()) {
+    return true;
+  }
+  flashStatus('Nejdřív připoj MQTT v Nastavení');
+  return false;
+}
+
+function applyMqttEvent(ev) {
+  if (ev.type === 'status') {
+    state.mqttStatus = ev.status;
+    state.mqttError = ev.error || '';
+    state.mqttConnected = ev.status === 'connected';
+    render();
+    return;
+  }
+
+  if (ev.type === 'mqtt') {
+    state.mqttConnected = ev.connected;
+    if (!ev.connected && !ev.reconnecting) {
+      resetTelemetryState();
+    }
+    render();
+    return;
+  }
+
+  if (ev.type === 'tele') {
+    state.teleFresh = true;
+    const p = ev.patch;
+    if (p.temps) {
+      state.temps = { ...state.temps, ...p.temps };
+    }
+    if (p.setpoint !== undefined) {
+      state.setpoint = p.setpoint;
+    }
+    if (p.autoMode !== undefined) {
+      state.autoMode = p.autoMode;
+    }
+    if (p.power !== undefined) {
+      state.power = p.power;
+    }
+    if (p.pump !== undefined) {
+      state.pump = p.pump;
+    }
+    if (p.compressor !== undefined) {
+      state.compressor = p.compressor;
+    }
+    if (p.lin !== undefined) {
+      state.lin = p.lin;
+    }
+    if (p.defrost !== undefined) {
+      state.defrost = p.defrost;
+    }
+    if (p.elec !== undefined) {
+      state.elec = p.elec;
+    }
+    if (p.alarm !== undefined) {
+      state.alarm = p.alarm;
+    }
+    if (p.poruchaText !== undefined) {
+      state.poruchaText = p.poruchaText;
+    }
+    if (p.watchActive !== undefined) {
+      state.watchActive = p.watchActive;
+    }
+    if (p.tab5Online !== undefined) {
+      state.tab5Online = p.tab5Online;
+      if (!p.tab5Online) {
+        state.teleFresh = false;
+        state.poruchaText = '';
+        state.alarm = false;
+        state.faultVisible = false;
+        state.faultText = '';
+        clearTimeout(faultTimer);
+        faultPending = null;
+      }
+    }
+    scheduleFaultBanner();
+    render();
+  }
 }
 
 function adjustSetpoint(delta) {
-  const step = state.autoMode ? 0.5 : 1;
-  state.setpoint = clampSetpoint(state.setpoint + delta * step);
-  if (state.autoMode) {
-    state.waterSp = Math.round(34 + (state.setpoint - 21) * 2);
+  if (!requireMqtt()) {
+    return;
   }
-  render();
-  flashDemoCmd(`setpoint → ${state.setpoint}`);
-}
-
-function setMode(auto) {
-  state.autoMode = auto;
-  if (auto) {
-    state.setpoint = 22.5;
-    state.waterSp = 38;
-  } else {
-    state.setpoint = 38;
-  }
-  render();
-  flashDemoCmd(`mode → ${auto ? 'room' : 'water'}`);
+  mqtt.publishCmd('setpoint', delta > 0 ? '+' : '-');
+  flashStatus(`→ setpoint ${delta > 0 ? '+' : '-'}`);
 }
 
 function setPower(on) {
-  state.power = on;
-  state.pump = on;
-  state.compressor = on && state.setpoint > 20;
-  render();
-  flashDemoCmd(`power → ${on ? 'ON' : 'OFF'}`);
-}
-
-function toggleQuiet() {
-  state.quiet = !state.quiet;
-  render();
-  flashDemoCmd(`quiet → ${state.quiet ? 'ON' : 'OFF'}`);
-}
-
-function toggleFaultDemo() {
-  state.fault = !state.fault;
-  state.faultText = state.fault
-    ? 'Ztráta spojení s venkovní jednotkou (LIN)'
-    : '';
-  render();
-}
-
-function flashDemoCmd(msg) {
-  if (!state.connected) {
+  if (!requireMqtt()) {
     return;
   }
-  const pill = $('#mqtt-pill');
-  if (!pill) {
+  mqtt.publishCmd('power', on ? 'ON' : 'OFF');
+  flashStatus(`→ power ${on ? 'ON' : 'OFF'}`);
+}
+
+function flashStatus(msg) {
+  const el = $('#sig-mqtt');
+  if (!el) {
     return;
   }
-  const prev = pill.textContent;
-  pill.textContent = `→ ${msg}`;
-  pill.classList.add('pill-ok');
+  el.classList.add('sig-flash');
+  el.setAttribute('aria-label', msg);
   setTimeout(() => {
-    pill.textContent = prev;
+    el.classList.remove('sig-flash');
+    render();
   }, 1200);
 }
+
+function mqttSigMeta() {
+  if (state.mqttStatus === 'connecting') {
+    return { state: 'warn', label: 'MQTT: připojování', pulse: true };
+  }
+  if (state.mqttStatus === 'error') {
+    return { state: 'error', label: `MQTT: ${state.mqttError || 'chyba'}`, pulse: false };
+  }
+  if (state.mqttConnected && state.tab5Online) {
+    return { state: 'ok', label: 'MQTT: připojeno', pulse: false };
+  }
+  if (state.mqttConnected) {
+    return { state: 'warn', label: 'MQTT: čekám na Tab5', pulse: false };
+  }
+  return { state: 'off', label: 'MQTT: odpojeno', pulse: false };
+}
+
+function linSigMeta() {
+  if (!state.mqttConnected && state.mqttStatus !== 'connecting') {
+    return { state: 'off', label: 'LIN: odpojeno', pulse: false };
+  }
+  if (isLinOk()) {
+    return { state: 'ok', label: 'LIN: OK', pulse: false };
+  }
+  if (state.teleFresh) {
+    return { state: 'warn', label: 'LIN: bez spojení', pulse: false };
+  }
+  return { state: 'off', label: 'LIN: čekám na data', pulse: false };
+}
+
+function applySig(el, meta, extraClass = '') {
+  if (!el) {
+    return;
+  }
+  const extra = extraClass ? ` ${extraClass}` : '';
+  el.className = `sig${extra} sig-${meta.state}${meta.pulse ? ' sig-pulse' : ''}`;
+  el.setAttribute('aria-label', meta.label);
+  el.setAttribute('title', meta.label);
+}
+
+const STAT_LABELS = {
+  power: 'Zapnuto',
+  pump: 'Čerpadlo',
+  compressor: 'Kompresor',
+  defrost: 'Odmrazování',
+  elec: 'El. topení',
+};
 
 function renderLeds() {
   const map = {
@@ -122,34 +316,29 @@ function renderLeds() {
     compressor: state.compressor,
     defrost: state.defrost,
     elec: state.elec,
-    quiet: state.quiet,
   };
   for (const [key, on] of Object.entries(map)) {
-    const el = $(`#led-${key}`);
-    if (el) {
-      el.classList.toggle('led-on', on);
+    const el = $(`#stat-${key}`);
+    if (!el) {
+      continue;
     }
+    el.classList.toggle('stat-on', on);
+    const name = STAT_LABELS[key] || key;
+    const label = `${name}: ${on ? 'zapnuto' : 'vypnuto'}`;
+    el.setAttribute('aria-label', label);
+    el.setAttribute('title', name);
   }
 }
 
+function mqttSessionActive() {
+  return mqtt.sessionActive();
+}
+
 function render() {
-  $('#clock').textContent = formatClock();
+  applySig($('#sig-mqtt'), mqttSigMeta());
+  applySig($('#sig-lin'), linSigMeta(), 'sig-label');
 
-  const mqttPill = $('#mqtt-pill');
-  mqttPill.textContent = state.connected ? 'MQTT OK' : 'MQTT ---';
-  mqttPill.className = `pill ${state.connected ? 'pill-ok' : 'pill-muted'}`;
-
-  const linPill = $('#lin-pill');
-  linPill.textContent = state.lin ? 'LIN OK' : 'LIN ---';
-  linPill.className = `pill ${state.lin ? 'pill-ok' : 'pill-muted'}`;
-
-  const faultBanner = $('#fault-banner');
-  if (state.fault) {
-    faultBanner.classList.remove('hidden');
-    $('#fault-text').textContent = state.faultText;
-  } else {
-    faultBanner.classList.add('hidden');
-  }
+  renderFaultBanner();
 
   const title = $('#sp-title');
   if (state.autoMode) {
@@ -162,35 +351,40 @@ function render() {
 
   const spVal = $('#sp-value');
   spVal.textContent = state.autoMode
-    ? state.setpoint.toFixed(1)
-    : String(Math.round(state.setpoint));
+    ? formatTemp(state.setpoint, 1)
+    : formatTemp(state.setpoint, 0);
 
-  const waterEl = $('#water-sp');
-  if (state.autoMode) {
-    waterEl.classList.remove('hidden');
-    waterEl.textContent = `Voda SP ${state.waterSp} °C`;
-  } else {
-    waterEl.classList.add('hidden');
-  }
+  $('#water-sp').classList.add('hidden');
 
-  $('#btn-mode-auto').classList.toggle('chip-active', state.autoMode);
-  $('#btn-mode-water').classList.toggle('chip-active', !state.autoMode);
-  $('#btn-mode-water').classList.toggle('chip-water', !state.autoMode);
-
-  $('#plan-title').textContent = state.planTitle;
-  $('#plan-text').textContent = state.planText;
-
-  $('#temp-room').textContent = state.temps.room.toFixed(1);
-  $('#temp-outdoor').textContent = state.temps.outdoor.toFixed(1);
-  $('#temp-inlet').textContent = String(state.temps.inlet);
-  $('#temp-outlet').textContent = String(state.temps.outlet);
+  $('#temp-room').textContent = formatTemp(state.temps.room, 1);
+  $('#temp-outdoor').textContent = formatTemp(state.temps.outdoor, 1);
+  $('#temp-inlet').textContent = formatTemp(state.temps.inlet, 0);
+  $('#temp-outlet').textContent = formatTemp(state.temps.outlet, 0);
 
   renderLeds();
 
-  $('#btn-quiet').textContent = `Tichý režim: ${state.quiet ? 'ZAP' : 'VYP'}`;
+  const sessionActive = mqttSessionActive();
+  $('#btn-connect').disabled = sessionActive;
+  $('#btn-disconnect').disabled = !sessionActive;
 
-  $('#btn-connect').disabled = state.connected;
-  $('#btn-disconnect').disabled = !state.connected;
+  const statusEl = $('#cfg-status');
+  if (statusEl) {
+    if (state.mqttStatus === 'error') {
+      statusEl.textContent = state.mqttError;
+      statusEl.className = 'cfg-status cfg-status-error';
+    } else if (state.mqttConnected) {
+      statusEl.textContent = state.tab5Online
+        ? 'Připojeno — Tab5 online'
+        : 'Připojeno — čekám na lgtherma/availability';
+      statusEl.className = 'cfg-status cfg-status-ok';
+    } else if (state.mqttStatus === 'connecting') {
+      statusEl.textContent = state.mqttError || 'Připojování…';
+      statusEl.className = 'cfg-status';
+    } else {
+      statusEl.textContent = '';
+      statusEl.className = 'cfg-status';
+    }
+  }
 }
 
 function showView(name) {
@@ -198,7 +392,6 @@ function showView(name) {
   $('#view-home').hidden = name !== 'home';
   $('#view-settings').classList.toggle('view-active', name === 'settings');
   $('#view-settings').hidden = name !== 'settings';
-
   document.querySelectorAll('.nav-btn').forEach((btn) => {
     btn.classList.toggle('nav-active', btn.dataset.view === name);
   });
@@ -213,68 +406,52 @@ function bindNav() {
 function bindControls() {
   $('#btn-minus').addEventListener('click', () => adjustSetpoint(-1));
   $('#btn-plus').addEventListener('click', () => adjustSetpoint(1));
-  $('#btn-mode-auto').addEventListener('click', () => setMode(true));
-  $('#btn-mode-water').addEventListener('click', () => setMode(false));
   $('#btn-start').addEventListener('click', () => setPower(true));
   $('#btn-stop').addEventListener('click', () => setPower(false));
-  $('#btn-quiet').addEventListener('click', toggleQuiet);
-
-  // Dvojité klepnutí na horní lištu = demo porucha
-  let tapCount = 0;
-  let tapTimer = null;
-  $('.topbar').addEventListener('click', () => {
-    tapCount += 1;
-    clearTimeout(tapTimer);
-    tapTimer = setTimeout(() => {
-      tapCount = 0;
-    }, 400);
-    if (tapCount >= 2) {
-      tapCount = 0;
-      toggleFaultDemo();
-    }
-  });
 }
 
 function bindSettings() {
   const saved = loadSettings();
-  if (saved.host) {
-    $('#cfg-host').value = saved.host;
-  }
-  if (saved.user) {
-    $('#cfg-user').value = saved.user;
-  }
-  if (saved.prefix) {
-    $('#cfg-prefix').value = saved.prefix;
-  }
+  $('#cfg-host').value = saved.host || DEFAULT_WSS;
+  $('#cfg-user').value = saved.user || '';
+  $('#cfg-pass').value = saved.password || '';
+  $('#cfg-prefix').value = saved.prefix || 'lgtherma';
 
   $('#btn-connect').addEventListener('click', () => {
-    saveSettings({
-      host: $('#cfg-host').value.trim(),
-      user: $('#cfg-user').value.trim(),
-      prefix: $('#cfg-prefix').value.trim() || 'lgtherma',
-    });
-    state.connected = true;
-    render();
-    flashDemoCmd('watch → ON');
+    const host = $('#cfg-host').value.trim();
+    const user = $('#cfg-user').value.trim();
+    const password = $('#cfg-pass').value;
+    const prefix = $('#cfg-prefix').value.trim() || 'lgtherma';
+    if (!host) {
+      state.mqttStatus = 'error';
+      state.mqttError = 'Zadej URL brokeru (WSS)';
+      render();
+      return;
+    }
+    saveSettings({ host, user, password, prefix });
+    localStorage.setItem(MQTT_AUTO_KEY, 'true');
+    mqtt.connect({ url: host, user, password, prefix });
   });
 
   $('#btn-disconnect').addEventListener('click', () => {
-    state.connected = false;
-    render();
+    localStorage.setItem(MQTT_AUTO_KEY, 'false');
+    mqtt.disconnect(true);
   });
 }
 
-function simulateTelemetry() {
-  if (!state.connected || !state.power) {
+function tryAutoConnect() {
+  if (localStorage.getItem(MQTT_AUTO_KEY) === 'false') {
     return;
   }
-  const drift = (Math.random() - 0.5) * 0.2;
-  state.temps.room = Math.round((state.temps.room + drift) * 10) / 10;
-  if (state.autoMode) {
-    state.temps.outlet = Math.round(state.waterSp + (Math.random() - 0.5) * 2);
-    state.temps.inlet = state.temps.outlet - Math.round(4 + Math.random() * 4);
+  const saved = loadSettings();
+  if (saved.host && saved.user && saved.password) {
+    mqtt.connect({
+      url: saved.host,
+      user: saved.user,
+      password: saved.password,
+      prefix: saved.prefix || 'lgtherma',
+    });
   }
-  render();
 }
 
 function registerSw() {
@@ -289,11 +466,13 @@ function init() {
   bindControls();
   bindSettings();
   render();
-  setInterval(() => {
-    $('#clock').textContent = formatClock();
-  }, 30_000);
-  setInterval(simulateTelemetry, 5000);
+  window.addEventListener('beforeunload', () => {
+    if (mqtt.isConnected()) {
+      mqtt.disconnect(true);
+    }
+  });
   registerSw();
+  tryAutoConnect();
 }
 
 document.addEventListener('DOMContentLoaded', init);

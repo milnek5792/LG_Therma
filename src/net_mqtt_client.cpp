@@ -145,6 +145,7 @@ struct TeleSnap {
 };
 
 TeleSnap s_pub{};
+char s_pubPorucha[sizeof(uiEez.porucha_text)] = "";
 int8_t s_watchPub = -1;
 bool s_compTest = (MQTT_COMPRESSOR_FORCE_ON != 0);
 uint32_t s_compLastPubMs = 0;
@@ -343,6 +344,8 @@ void publishTeleOfflineMarkers() {
     s_pub.compressor = 0;
   }
   mqttPublishRetain(MQTT_TOPIC_TELE_ALARM, "OFF");
+  mqttPublishRetain(MQTT_TOPIC_TELE_PORUCHA, "");
+  s_pubPorucha[0] = '\0';
   mqttPublishRetain(MQTT_TOPIC_TELE_TEMP_OUTLET, MQTT_TELE_NA);
   mqttPublishRetain(MQTT_TOPIC_TELE_TEMP_INLET, MQTT_TELE_NA);
   mqttPublishRetain(MQTT_TOPIC_TELE_TEMP_OUTDOOR, MQTT_TELE_NA);
@@ -547,6 +550,9 @@ void publishTeleOne(int idx) {
     case 9:
       publishStr(MQTT_TOPIC_TELE_ALARM, uiEez.sig_alarm ? "ON" : "OFF");
       s_pub.alarm = uiEez.sig_alarm ? 1 : 0;
+      strncpy(s_pubPorucha, uiEez.porucha_text, sizeof(s_pubPorucha) - 1);
+      s_pubPorucha[sizeof(s_pubPorucha) - 1] = '\0';
+      publishStr(MQTT_TOPIC_TELE_PORUCHA, s_pubPorucha);
       break;
     case 10:
       publishRegMode();
@@ -617,6 +623,11 @@ void telePublishChanges() {
   if (al != s_pub.alarm) {
     publishStr(MQTT_TOPIC_TELE_ALARM, al ? "ON" : "OFF");
     s_pub.alarm = al;
+  }
+  if (strcmp(uiEez.porucha_text, s_pubPorucha) != 0) {
+    strncpy(s_pubPorucha, uiEez.porucha_text, sizeof(s_pubPorucha) - 1);
+    s_pubPorucha[sizeof(s_pubPorucha) - 1] = '\0';
+    publishStr(MQTT_TOPIC_TELE_PORUCHA, s_pubPorucha);
   }
 
   float inlet = UI_TEPLOTA_NEPLATNA;

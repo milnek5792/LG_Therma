@@ -64,6 +64,7 @@
 #define MQTT_TOPIC_TELE_QUIET        MQTT_BASE "/tele/quiet"
 #define MQTT_TOPIC_TELE_MODE         MQTT_BASE "/tele/mode"
 #define MQTT_TOPIC_TELE_ALARM        MQTT_BASE "/tele/alarm"
+#define MQTT_TOPIC_TELE_PORUCHA      MQTT_BASE "/tele/porucha"
 #define MQTT_TOPIC_TELE_BLE          MQTT_BASE "/tele/ble"
 
 #define MQTT_TOPIC_CMD_POWER    MQTT_BASE "/cmd/power"
