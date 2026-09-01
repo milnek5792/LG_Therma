@@ -29,6 +29,7 @@ body {
   min-height: 100%;
   background: var(--bg);
   color: var(--text);
+  overflow-x: hidden;
 }
 
 body {
@@ -230,11 +231,12 @@ body {
 /* Setpoint */
 .setpoint-panel {
   text-align: center;
-  margin: 8px 16px 16px;
-  padding: 16px 12px;
+  margin: 8px 0 16px;
+  padding: 16px 10px;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 12px;
+  overflow: hidden;
 }
 
 .sp-title {
@@ -256,21 +258,24 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: clamp(6px, 2vw, 12px);
   margin-bottom: 16px;
+  width: 100%;
+  max-width: 100%;
 }
 
 .btn-round {
-  width: 88px;
-  height: 88px;
+  width: clamp(64px, 20vw, 88px);
+  height: clamp(64px, 20vw, 88px);
   border-radius: 16px;
   border: 2px solid var(--btn-round-border);
   background: var(--btn-round);
   color: #fff;
-  font-size: 2.5rem;
+  font-size: clamp(1.75rem, 6vw, 2.5rem);
   line-height: 1;
   cursor: pointer;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
   transition: transform 0.08s, background 0.15s;
 }
 
@@ -280,7 +285,9 @@ body {
 }
 
 .sp-value-wrap {
-  min-width: 140px;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 9rem;
 }
 
 .sp-value-line {
@@ -288,19 +295,21 @@ body {
   align-items: flex-start;
   justify-content: center;
   gap: 4px;
+  flex-wrap: nowrap;
 }
 
 .sp-value {
-  font-size: 3rem;
+  font-size: clamp(2rem, 9vw, 3rem);
   font-weight: 500;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
 .sp-unit {
-  font-size: 1.25rem;
+  font-size: clamp(0.9rem, 3.5vw, 1.25rem);
   margin-top: 0.35rem;
   color: var(--muted);
+  flex-shrink: 0;
 }
 
 .water-sp {
@@ -411,7 +420,7 @@ body {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 8px;
-  margin: 0 16px 16px;
+  margin: 0 0 16px;
 }
 
 .stat {
