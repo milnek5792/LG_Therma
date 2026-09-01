@@ -1,5 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
-  <rect width="512" height="512" rx="96" fill="#121214"/>
-  <circle cx="256" cy="256" r="150" stroke="#0A84FF" stroke-width="24"/>
-  <path d="M256 136v118l76 44" stroke="#FF9F0A" stroke-width="24" stroke-linecap="round"/>
+  <defs>
+    <linearGradient id="bg" x1="64" y1="48" x2="448" y2="464" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1a1a1f"/>
+      <stop offset="1" stop-color="#0e0e10"/>
+    </linearGradient>
+    <linearGradient id="fan" x1="184" y1="216" x2="328" y2="360" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3d9bff"/>
+      <stop offset="1" stop-color="#0a84ff"/>
+    </linearGradient>
+    <linearGradient id="heat" x1="160" y1="96" x2="352" y2="200" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffb340"/>
+      <stop offset="1" stop-color="#ff9f0a"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect x="28" y="28" width="456" height="456" rx="96" stroke="#2a2a32" stroke-width="4"/>
+  <path d="M168 208h176c15.5 0 28 12.5 28 28v120c0 15.5-12.5 28-28 28H168c-15.5 0-28-12.5-28-28V236c0-15.5 12.5-28 28-28z" fill="#16161c" stroke="#3a3a44" stroke-width="6"/>
+  <path d="M176 208V152M336 208V152" stroke="url(#heat)" stroke-width="16" stroke-linecap="round"/>
+  <path d="M152 152h72M288 152h72" stroke="url(#heat)" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="256" cy="292" r="80" stroke="url(#fan)" stroke-width="14"/>
+  <circle cx="256" cy="292" r="34" fill="#0a84ff" fill-opacity="0.22"/>
+  <path d="M256 224v136M192 292h128" stroke="#0a84ff" stroke-opacity="0.45" stroke-width="10" stroke-linecap="round"/>
+  <path d="M220 256c18-18 54-18 72 0M220 328c18 18 54 18 72 0" stroke="#0a84ff" stroke-opacity="0.35" stroke-width="8" stroke-linecap="round"/>
 </svg>
