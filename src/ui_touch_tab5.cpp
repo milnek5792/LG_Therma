@@ -390,6 +390,10 @@ bool uiTouchTab5Poll() {
   int baseY = 0;
 
   if (readTouchPressed(x, y, baseX, baseY)) {
+    if (uiDisplayHandleTouchWhileAsleep(true)) {
+      return false;
+    }
+
     if (!s_loggedFirstTouch) {
       s_loggedFirstTouch = true;
       Serial.printf("[TOUCH] first @ %d,%d base=%d,%d\n", x, y, baseX, baseY);
@@ -428,6 +432,9 @@ bool uiTouchTab5Poll() {
     }
     return false;
   }
+
+  // Po probuzení displeje jedním tapem — vyčistit ignore i bez předchozího down.
+  (void)uiDisplayHandleTouchWhileAsleep(false);
 
   if (!s_fingerDown) {
     return false;

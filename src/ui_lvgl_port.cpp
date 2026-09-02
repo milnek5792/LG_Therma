@@ -9,6 +9,7 @@
 #include "ui_eez_ntp_label.h"
 #include "ui_eez_porucha.h"
 #include "ui_display_sleep.h"
+#include "ui_display_mgr.h"
 #include "net_sdio_arbiter.h"
 #include "net_ota.h"
 #include <M5Unified.h>
@@ -31,8 +32,37 @@ static volatile bool s_frozen = false;
 static volatile bool s_sdioLight = false;
 static volatile bool s_fullPaint = false;
 static volatile bool s_unfreezeRefresh = false;
-static uint32_t s_fullPaintUntilMs = 0;
+static bool s_wasAsleep = false;
+static volatile bool s_wakeRepaint = false;
 static uint32_t s_lastFlushMs = 0;
+
+static void uiApplyTichyRezimVisual(void);
+
+static void lvglRepaintAfterWake(void) {
+  if (!s_disp) {
+    return;
+  }
+  Serial.println("[LVGL] wake repaint");
+  s_wakeRepaint = true;
+  ui_tick();
+  uiEezApplySignalLeds();
+  uiEezNtpLabelTick();
+  uiEezPoruchaTick();
+  uiApplyTichyRezimVisual();
+  uiTouchVisualSync();
+  lv_obj_t* scr = lv_screen_active();
+  if (scr) {
+    lv_obj_invalidate(scr);
+  }
+  lv_timer_handler();
+  lv_refr_now(s_disp);
+  for (int i = 0; i < 6; ++i) {
+    lv_timer_handler();
+  }
+  s_wakeRepaint = false;
+  s_lastFlushMs = millis();
+}
+static uint32_t s_fullPaintUntilMs = 0;
 static bool s_pointerInput = false;
 static int s_horRes = 0;
 static int s_verRes = 0;
@@ -46,7 +76,7 @@ static bool fullPaintActive() {
   return true;
 }
 
-static void uiApplyTichyRezimVisual() {
+static void uiApplyTichyRezimVisual(void) {
   if (!objects.btn_tichy) { return; }
   static bool initialized = false;
   static bool lastUtlum = false;
@@ -59,7 +89,6 @@ static void uiApplyTichyRezimVisual() {
       lv_color_hex(utlum ? 0xffaa00u : 0x48484fu),
       LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_obj_invalidate(objects.btn_tichy);
-  uiDisplayNoteActivity();
 }
 
 static void lvglPump(uint32_t ms) {
@@ -72,9 +101,13 @@ static void dispFlush(lv_display_t* disp, const lv_area_t* area, uint8_t* pxMap)
     lv_display_flush_ready(disp);
     return;
   }
+  if (uiDisplayIsAsleep()) {
+    lv_display_flush_ready(disp);
+    return;
+  }
   // Freeze: nic na panel — ALE nesmíme zahodit dirty bez invalidate po unfreeze
   // (viz uiLvglSetFrozen). Během freeze nevolat push*.
-  if (s_frozen) {
+  if (s_frozen && !s_wakeRepaint) {
     lv_display_flush_ready(disp);
     return;
   }
@@ -106,13 +139,18 @@ static void touchRead(lv_indev_t* indev, lv_indev_data_t* data) {
     if (detail.isPressed()) {
       s_touchLastX = detail.x;
       s_touchLastY = detail.y;
-      data->state = LV_INDEV_STATE_PRESSED;
+      if (uiDisplayHandleTouchWhileAsleep(true)) {
+        data->state = LV_INDEV_STATE_RELEASED;
+      } else {
+        data->state = LV_INDEV_STATE_PRESSED;
+        uiDisplayNoteActivity();
+      }
       data->point.x = s_touchLastX;
       data->point.y = s_touchLastY;
-      uiDisplayNoteActivity();
       return;
     }
   }
+  (void)uiDisplayHandleTouchWhileAsleep(false);
   data->state = LV_INDEV_STATE_RELEASED;
   data->point.x = s_touchLastX;
   data->point.y = s_touchLastY;
@@ -241,6 +279,30 @@ void uiLvglTick() {
   if (netSdioTlsBusy()) {
     return;
   }
+
+  const bool asleep = uiDisplayIsAsleep();
+  const bool woke = s_wasAsleep && !asleep && s_initDone;
+  if (woke) {
+    s_unfreezeRefresh = true;
+    s_lastFlushMs = 0;
+  }
+  s_wasAsleep = asleep;
+
+  if (asleep) {
+    const uint32_t now = millis();
+    if (now != s_lastTickMs) {
+      lv_tick_inc(now - s_lastTickMs);
+      s_lastTickMs = now;
+    }
+    return;
+  }
+
+  if (woke) {
+    lvglRepaintAfterWake();
+    s_unfreezeRefresh = false;
+    return;
+  }
+
   if (s_frozen) {
     const uint32_t now = millis();
     if (now != s_lastTickMs) {
@@ -271,5 +333,6 @@ void uiLvglTick() {
   ui_tick();
   uiEezApplySignalLeds();
   uiEezNtpLabelTick();
+  uiEezPoruchaTick();
   uiApplyTichyRezimVisual();
 }

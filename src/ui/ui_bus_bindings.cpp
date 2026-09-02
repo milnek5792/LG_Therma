@@ -1,5 +1,6 @@
 // ui_bus_bindings.cpp — EEZ akce → LIN zápis + sync model → UI
 #include "ui_bus_bindings.h"
+#include "ui_display_mgr.h"
 
 #include "app_cmd.h"
 #include "src/bus_lg_lin_api.h"
@@ -444,6 +445,7 @@ void uiBusFlushDeferredStorage(void) {
   s_lastFlushMs = now;
   storageFlushTcSessionPending();
   climateRegulatorFlushPendingSave();
+  uiDisplayFlushPendingStorage();
 }
 
 void uiBusProcessAppMsg(const AppMsg* msg) {

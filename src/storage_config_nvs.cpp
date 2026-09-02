@@ -6,12 +6,15 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include <string.h>
 
 namespace {
 
 Preferences s_prefs;
 bool s_open = false;
+SemaphoreHandle_t s_nvsMux = nullptr;
 bool s_tcSessionDirty = false;
 bool s_tcSessionOnPending = false;
 uint8_t s_tcSessionSpPending = 35;
@@ -37,6 +40,29 @@ constexpr uint16_t kPlanVersion = 4;
 constexpr uint16_t kPlanVersionMinCompat = 2;
 constexpr uint32_t kRegMagic = 0x52454731u;  // REG1
 constexpr uint16_t kRegVersion = 5;
+constexpr uint32_t kSleepOptsSec[] = {0, 60, 120, 300, 600, 1800};
+
+class NvsLock {
+ public:
+  NvsLock() : taken_(s_nvsMux && xSemaphoreTake(s_nvsMux, portMAX_DELAY) == pdTRUE) {}
+  ~NvsLock() {
+    if (taken_) {
+      xSemaphoreGive(s_nvsMux);
+    }
+  }
+
+ private:
+  bool taken_;
+};
+
+bool isValidSleepTimeoutSec(uint32_t sec) {
+  for (uint32_t v : kSleepOptsSec) {
+    if (v == sec) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /** NVS v4 — venkovní body + bias_pct (nepoužito v regulaci). */
 struct RegulatorConfigV4 {
@@ -86,20 +112,27 @@ void ensureOpen() {
 }  // namespace
 
 void storageInit() {
+  if (!s_nvsMux) {
+    s_nvsMux = xSemaphoreCreateMutex();
+  }
+  NvsLock lock;
   ensureOpen();
 }
 
 bool storageLoadWifiEnabled() {
+  NvsLock lock;
   ensureOpen();
   return s_prefs.getBool(kKeyWifiEn, false);
 }
 
 bool storageWifiEnabledIsSet() {
+  NvsLock lock;
   ensureOpen();
   return s_prefs.isKey(kKeyWifiEn);
 }
 
 void storageSaveWifiEnabled(bool on) {
+  NvsLock lock;
   ensureOpen();
   s_prefs.putBool(kKeyWifiEn, on);
 }
@@ -108,6 +141,7 @@ bool storageLoadWifiCredentials(char* ssid, size_t ssidLen, char* pass, size_t p
   if (!ssid || ssidLen == 0 || !pass || passLen == 0) {
     return false;
   }
+  NvsLock lock;
   ensureOpen();
   String storedSsid = s_prefs.getString(kKeyWifiSsid, "");
   String storedPass = s_prefs.getString(kKeyWifiPass, "");
@@ -127,37 +161,49 @@ void storageSaveWifiCredentials(const char* ssid, const char* pass) {
   if (!ssid || !pass) {
     return;
   }
+  NvsLock lock;
   ensureOpen();
   s_prefs.putString(kKeyWifiSsid, ssid);
   s_prefs.putString(kKeyWifiPass, pass);
 }
 
 bool storageLoadMqttEnabled() {
+  NvsLock lock;
   ensureOpen();
   return s_prefs.getBool(kKeyMqttEn, false);
 }
 
 void storageSaveMqttEnabled(bool on) {
+  NvsLock lock;
   ensureOpen();
   s_prefs.putBool(kKeyMqttEn, on);
 }
 
 uint8_t storageLoadBrightness(void) {
+  NvsLock lock;
   ensureOpen();
   if (!s_open) {
     return 60;
   }
-  int v = s_prefs.getInt(kKeyBlPct, 60);
+  int v = 60;
+  if (s_prefs.isKey(kKeyBlPct)) {
+    v = s_prefs.getInt(kKeyBlPct, -1);
+    if (v < 0) {
+      v = static_cast<int>(s_prefs.getUInt(kKeyBlPct, 60));
+    }
+  }
   if (v < 10) {
     v = 10;
   }
   if (v > 97) {
     v = 97;
   }
+  Serial.printf("[NVS] load jas=%d\n", v);
   return static_cast<uint8_t>(v);
 }
 
 void storageSaveBrightness(uint8_t percent) {
+  NvsLock lock;
   ensureOpen();
   if (!s_open) {
     return;
@@ -178,17 +224,35 @@ void storageSaveBrightness(uint8_t percent) {
 }
 
 uint32_t storageLoadSleepTimeoutSec(void) {
+  NvsLock lock;
   ensureOpen();
   if (!s_open) {
     return 120;
   }
-  return static_cast<uint32_t>(s_prefs.getUInt(kKeyBlSleep, 120));
+  uint32_t sec = 120;
+  if (s_prefs.isKey(kKeyBlSleep)) {
+    sec = s_prefs.getUInt(kKeyBlSleep, UINT32_MAX);
+    if (!isValidSleepTimeoutSec(sec)) {
+      const int alt = s_prefs.getInt(kKeyBlSleep, -1);
+      if (alt >= 0 && isValidSleepTimeoutSec(static_cast<uint32_t>(alt))) {
+        sec = static_cast<uint32_t>(alt);
+      } else {
+        sec = 120;
+      }
+    }
+  }
+  Serial.printf("[NVS] load usinani=%lus\n", (unsigned long)sec);
+  return sec;
 }
 
 void storageSaveSleepTimeoutSec(uint32_t sec) {
+  NvsLock lock;
   ensureOpen();
   if (!s_open) {
     return;
+  }
+  if (!isValidSleepTimeoutSec(sec)) {
+    sec = 120;
   }
   size_t n = s_prefs.putUInt(kKeyBlSleep, sec);
   if (n == 0) {
@@ -202,6 +266,7 @@ bool storageLoadPlanConfig(PlanTydenConfig* cfg) {
   if (!cfg) {
     return false;
   }
+  NvsLock lock;
   ensureOpen();
   size_t len = s_prefs.getBytesLength(kKeyPlan);
   if (len < sizeof(PlanTydenConfig) + 6) {
@@ -230,6 +295,7 @@ void storageSavePlanConfig(const PlanTydenConfig* cfg) {
   if (!cfg) {
     return;
   }
+  NvsLock lock;
   ensureOpen();
   uint8_t buf[6 + sizeof(PlanTydenConfig)];
   memcpy(buf, &kPlanMagic, 4);
@@ -238,10 +304,22 @@ void storageSavePlanConfig(const PlanTydenConfig* cfg) {
   s_prefs.putBytes(kKeyPlan, buf, sizeof(buf));
 }
 
+void saveRegulatorConfigLocked(const RegulatorConfig* cfg) {
+  if (!cfg || !s_open) {
+    return;
+  }
+  uint8_t buf[6 + sizeof(RegulatorConfig)];
+  memcpy(buf, &kRegMagic, 4);
+  memcpy(buf + 4, &kRegVersion, 2);
+  memcpy(buf + 6, cfg, sizeof(RegulatorConfig));
+  s_prefs.putBytes(kKeyReg, buf, sizeof(buf));
+}
+
 bool storageLoadRegulatorConfig(RegulatorConfig* cfg) {
   if (!cfg) {
     return false;
   }
+  NvsLock lock;
   ensureOpen();
   size_t len = s_prefs.getBytesLength(kKeyReg);
   if (len < 6) {
@@ -273,7 +351,7 @@ bool storageLoadRegulatorConfig(RegulatorConfig* cfg) {
     RegulatorConfigV4 old{};
     memcpy(&old, buf + 6, sizeof(RegulatorConfigV4));
     migrateRegulatorV4ToV5(&old, cfg);
-    storageSaveRegulatorConfig(cfg);
+    saveRegulatorConfigLocked(cfg);
     return true;
   }
   return false;
@@ -283,18 +361,16 @@ void storageSaveRegulatorConfig(const RegulatorConfig* cfg) {
   if (!cfg) {
     return;
   }
+  NvsLock lock;
   ensureOpen();
-  uint8_t buf[6 + sizeof(RegulatorConfig)];
-  memcpy(buf, &kRegMagic, 4);
-  memcpy(buf + 4, &kRegVersion, 2);
-  memcpy(buf + 6, cfg, sizeof(RegulatorConfig));
-  s_prefs.putBytes(kKeyReg, buf, sizeof(buf));
+  saveRegulatorConfigLocked(cfg);
 }
 
 bool storageLoadUiRezim(uint8_t* out) {
   if (!out) {
     return false;
   }
+  NvsLock lock;
   ensureOpen();
   if (!s_prefs.isKey(kKeyUiRezim)) {
     return false;
@@ -308,6 +384,7 @@ bool storageLoadUiRezim(uint8_t* out) {
 }
 
 void storageSaveUiRezim(uint8_t rezim) {
+  NvsLock lock;
   ensureOpen();
   s_prefs.putInt(kKeyUiRezim, (int)rezim);
 }
@@ -316,6 +393,7 @@ bool storageLoadTcSession(bool* outOn, uint8_t* outSp) {
   if (!outOn) {
     return false;
   }
+  NvsLock lock;
   ensureOpen();
   if (!s_prefs.isKey(kKeyTcOn)) {
     return false;
@@ -333,6 +411,7 @@ bool storageLoadTcSession(bool* outOn, uint8_t* outSp) {
 }
 
 void storageSaveTcSession(bool on, uint8_t spC) {
+  NvsLock lock;
   ensureOpen();
   s_prefs.putBool(kKeyTcOn, on);
   if (spC >= 15 && spC <= 65) {
@@ -360,6 +439,7 @@ bool storageLoadBleRoomMac(char* mac, size_t len) {
   if (!mac || len < H2_MAC_STR_LEN) {
     return false;
   }
+  NvsLock lock;
   ensureOpen();
   // isKey dřív než getString — jinak Preferences loguje ESP_LOGE při NOT_FOUND.
   if (!s_prefs.isKey(kKeyBleRoomMac)) {
@@ -377,6 +457,7 @@ bool storageLoadBleRoomMac(char* mac, size_t len) {
 }
 
 void storageSaveBleRoomMac(const char* mac) {
+  NvsLock lock;
   ensureOpen();
   if (!mac || mac[0] == '\0' || strcmp(mac, "00:00:00:00:00:00") == 0) {
     s_prefs.remove(kKeyBleRoomMac);
@@ -389,6 +470,7 @@ bool storageLoadBleOutdoorMac(char* mac, size_t len) {
   if (!mac || len < H2_MAC_STR_LEN) {
     return false;
   }
+  NvsLock lock;
   ensureOpen();
   if (!s_prefs.isKey(kKeyBleOutMac)) {
     mac[0] = '\0';
@@ -405,6 +487,7 @@ bool storageLoadBleOutdoorMac(char* mac, size_t len) {
 }
 
 void storageSaveBleOutdoorMac(const char* mac) {
+  NvsLock lock;
   ensureOpen();
   if (!mac || mac[0] == '\0' || strcmp(mac, "00:00:00:00:00:00") == 0) {
     s_prefs.remove(kKeyBleOutMac);

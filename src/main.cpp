@@ -23,6 +23,7 @@
 #if LG_USE_EEZ_LVGL
 #include "src/ui_touch_tab5.h"
 #include "src/ui_display_sleep.h"
+#include "ui_display_mgr.h"
 #else
 #include "src/ui_touch_hmi.h"
 #include "src/ui_hmi_draw.h"
@@ -107,6 +108,7 @@ void loop() {
 #if LG_USE_EEZ_LVGL
   uiTouchTab5Poll();
   uiDisplayTick();
+  uiDisplayFlushPendingStorage();
 #endif
 
   uiSerialMonitorPoll();

@@ -24,6 +24,12 @@ void uiDisplaySetSleepTimeoutSec(uint32_t sec, bool persist);
 const char* uiDisplaySleepTimeoutLabel(void);
 void uiDisplayCycleSleepTimeout(void);
 
+/** Odložený zápis jasu/usínání (main loop, po mutexu NVS). */
+void uiDisplayFlushPendingStorage(void);
+
+/** true = dotyk spolknut (spánek / probuzení) */
+bool uiDisplayHandleTouchWhileAsleep(bool pressed);
+
 #ifdef __cplusplus
 }
 #endif
