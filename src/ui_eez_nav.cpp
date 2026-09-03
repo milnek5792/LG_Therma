@@ -4,6 +4,7 @@
 #include "ui_eez_settings.h"
 #include "ui_eez_plan.h"
 #include "ui_eez_regulator.h"
+#include "ui_eez_energy.h"
 #include "ui_eez_ui.h"
 #include "ui_eez_wifi_form.h"
 #include "ui_eez_ble_mac_form.h"
@@ -48,6 +49,9 @@ void uiNavigateTo(enum ScreensEnum screenId) {
   if (screenId == SCREEN_ID_REGULATOR) {
     uiRegulatorEnsureCreated();
   }
+  if (screenId == SCREEN_ID_SPOTREBA) {
+    uiEnergyEnsureCreated();
+  }
 
   loadScreen(screenId);
 
@@ -85,4 +89,8 @@ bool uiIsPlanScreen() {
 
 bool uiIsRegulatorScreen() {
   return uiGetCurrentScreen() == SCREEN_ID_REGULATOR;
+}
+
+bool uiIsEnergyScreen() {
+  return uiGetCurrentScreen() == SCREEN_ID_SPOTREBA;
 }

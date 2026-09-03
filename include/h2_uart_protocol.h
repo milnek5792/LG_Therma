@@ -10,6 +10,7 @@ extern "C" {
 #define H2_CMD_SCAN     "SCAN"
 #define H2_CMD_POLL     "POLL"
 #define H2_CMD_GET_CFG  "GET CFG"
+#define H2_CMD_GET_INFO "GET INFO"
 #define H2_CMD_WIFI_OFF "WIFI OFF"
 #define H2_CMD_OTA_STOP "OTA STOP"
 #define H2_CMD_WIFI_START "WIFI START"
@@ -20,10 +21,13 @@ extern "C" {
 #define H2_PREFIX_FOUND    "FOUND "
 #define H2_PREFIX_SCAN_DONE "SCAN DONE"
 #define H2_PREFIX_CFG        "CFG "
+#define H2_PREFIX_INFO       "INFO "
 #define H2_PREFIX_OK         "OK"
 #define H2_PREFIX_ERR        "ERR "
 #define H2_PREFIX_WIFI       "WIFI "
 #define H2_PREFIX_OTA        "OTA "
+/** C3 → Tab5: spotřeba z PZEM přes ESP-NOW — `PWR W=<W> E=<kWh> R=<0|1>` */
+#define H2_PREFIX_PWR        "PWR "
 
 #define H2_FOUND_MAX  8
 #define H2_MAC_STR_LEN 18  // AA:BB:CC:DD:EE:FF

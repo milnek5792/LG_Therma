@@ -2,12 +2,14 @@
 #include "climate_room_uart.h"
 
 #include "ble_config.h"
+#include "climate_energy.h"
 #include "net_wifi_mgr.h"
 #include "storage_config_nvs.h"
 #include "ui_eez_model.h"
 
 #include <Arduino.h>
 #include <HardwareSerial.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -54,6 +56,15 @@ ClimateBridgeOtaState s_bridgeOtaState = CLIMATE_BRIDGE_OTA_IDLE;
 char s_bridgeOtaIp[20] = "";
 char s_bridgeOtaHost[40] = "";
 uint32_t s_bridgeOtaFailAtMs = 0;
+
+char s_bridgeMac[H2_MAC_STR_LEN] = "";
+uint8_t s_bridgeCh = 0;
+bool s_bridgeEspNow = false;
+uint32_t s_bridgeInfoAtMs = 0;
+
+uint16_t s_lastPwrW = 0;
+float s_lastPwrKwh = 0.0f;
+uint32_t s_lastPwrAtMs = 0;
 
 bool isZeroMac(const char* mac) {
   return !mac || mac[0] == '\0' || strcmp(mac, "00:00:00:00:00:00") == 0 ||
@@ -268,6 +279,46 @@ void parseTelemetryFields(char* line, float* t, float* h, int* batt, int* rssi,
   }
 }
 
+void handleBridgeInfoLine(const char* line) {
+  if (!line || strncmp(line, H2_PREFIX_INFO, strlen(H2_PREFIX_INFO)) != 0) {
+    return;
+  }
+  const char* p = line + strlen(H2_PREFIX_INFO);
+  char mac[H2_MAC_STR_LEN] = "";
+  unsigned ch = 0;
+  unsigned espnow = 0;
+  // INFO MAC=AA:BB:CC:DD:EE:FF CH=1 ESPNOW=1
+  const char* macKey = strstr(p, "MAC=");
+  const char* chKey = strstr(p, "CH=");
+  const char* enKey = strstr(p, "ESPNOW=");
+  if (macKey) {
+    macKey += 4;
+    size_t i = 0;
+    while (macKey[i] && macKey[i] != ' ' && i + 1 < sizeof(mac)) {
+      mac[i] = macKey[i];
+      ++i;
+    }
+    mac[i] = '\0';
+  }
+  if (chKey) {
+    ch = (unsigned)atoi(chKey + 3);
+  }
+  if (enKey) {
+    espnow = (unsigned)atoi(enKey + 7);
+  }
+  portENTER_CRITICAL(&s_mux);
+  if (mac[0]) {
+    strncpy(s_bridgeMac, mac, sizeof(s_bridgeMac) - 1);
+    s_bridgeMac[sizeof(s_bridgeMac) - 1] = '\0';
+  }
+  s_bridgeCh = (uint8_t)ch;
+  s_bridgeEspNow = (espnow != 0);
+  s_bridgeInfoAtMs = millis();
+  portEXIT_CRITICAL(&s_mux);
+  Serial.printf("[ROOM] bridge INFO mac=%s ch=%u espnow=%u\n", s_bridgeMac,
+                (unsigned)s_bridgeCh, s_bridgeEspNow ? 1u : 0u);
+}
+
 void handleBridgeWifiLine(const char* line) {
   if (!line) {
     return;
@@ -344,6 +395,25 @@ void parseLine(char* line) {
     return;
   }
 
+  if (strncmp(line, H2_PREFIX_PWR, strlen(H2_PREFIX_PWR)) == 0) {
+    unsigned w = 0;
+    float e = 0.0f;
+    unsigned r = 0;
+    if (sscanf(line + strlen(H2_PREFIX_PWR), "W=%u E=%f R=%u", &w, &e, &r) >=
+        2) {
+      portENTER_CRITICAL(&s_mux);
+      s_lastPwrW = (uint16_t)w;
+      s_lastPwrKwh = e;
+      s_lastPwrAtMs = millis();
+      portEXIT_CRITICAL(&s_mux);
+      climateEnergyOnSample((uint16_t)w, e, r != 0);
+    }
+    return;
+  }
+  if (strncmp(line, H2_PREFIX_INFO, strlen(H2_PREFIX_INFO)) == 0) {
+    handleBridgeInfoLine(line);
+    return;
+  }
   if (strncmp(line, H2_PREFIX_FOUND, strlen(H2_PREFIX_FOUND)) == 0) {
     handleFoundLine(line);
     return;
@@ -445,6 +515,8 @@ void climateRoomInit(void) {
   Serial.printf("[ROOM] cfg room=%s out=%s\n", s_cfgMac, s_cfgOutMac);
   delay(500);
   sendCmd("GET CFG");
+  delay(50);
+  sendCmd(H2_CMD_GET_INFO);
   delay(100);
   pushStoredMacToH2();
   s_macResyncAtMs = millis() + 60000UL;
@@ -816,3 +888,40 @@ ClimateBridgeOtaState climateRoomBridgeOtaState(void) {
 const char* climateRoomBridgeOtaIp(void) { return s_bridgeOtaIp; }
 
 const char* climateRoomBridgeOtaHost(void) { return s_bridgeOtaHost; }
+
+void climateRoomRequestBridgeInfo(void) {
+  if (!s_inited) {
+    return;
+  }
+  sendCmd(H2_CMD_GET_INFO);
+}
+
+bool climateRoomBridgeInfoOk(void) {
+  return s_bridgeInfoAtMs != 0 && s_bridgeMac[0] != '\0';
+}
+
+const char* climateRoomBridgeMac(void) { return s_bridgeMac; }
+
+uint8_t climateRoomBridgeChannel(void) { return s_bridgeCh; }
+
+bool climateRoomBridgeEspNowOk(void) { return s_bridgeEspNow; }
+
+uint32_t climateRoomBridgeInfoAgeMs(void) {
+  if (s_bridgeInfoAtMs == 0) {
+    return UINT32_MAX;
+  }
+  return millis() - s_bridgeInfoAtMs;
+}
+
+bool climateRoomLastPwrOk(void) { return s_lastPwrAtMs != 0; }
+
+uint16_t climateRoomLastPwrW(void) { return s_lastPwrW; }
+
+float climateRoomLastPwrKwh(void) { return s_lastPwrKwh; }
+
+uint32_t climateRoomLastPwrAgeMs(void) {
+  if (s_lastPwrAtMs == 0) {
+    return UINT32_MAX;
+  }
+  return millis() - s_lastPwrAtMs;
+}

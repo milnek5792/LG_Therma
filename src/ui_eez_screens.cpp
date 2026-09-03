@@ -1119,6 +1119,7 @@ void tick_screen_main() {
 
 #include "ui_eez_plan.h"
 #include "ui_eez_regulator.h"
+#include "ui_eez_energy.h"
 #include "ui_eez_ble_mac_form.h"
 
 typedef void (*tick_screen_func_t)();
@@ -1129,9 +1130,10 @@ tick_screen_func_t tick_screen_funcs[] = {
     uiPlanTick,
     uiRegulatorTick,
     uiBleMacFormTick,
+    uiEnergyTick,
 };
 void tick_screen(int screen_index) {
-    if (screen_index >= 0 && screen_index < 6) {
+    if (screen_index >= 0 && screen_index < 7) {
         tick_screen_funcs[screen_index]();
     }
 }

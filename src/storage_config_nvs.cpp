@@ -33,6 +33,14 @@ constexpr const char* kKeyTcOn = "tc_on";
 constexpr const char* kKeyTcSp = "tc_sp";
 constexpr const char* kKeyBleRoomMac = "ble_room";
 constexpr const char* kKeyBleOutMac = "ble_out";
+constexpr const char* kKeyEnMeta = "en_meta";
+constexpr const char* kKeyEnPwr0 = "en_p0";
+constexpr const char* kKeyEnPwr1 = "en_p1";
+constexpr const char* kKeyEnPwr2 = "en_p2";
+constexpr const char* kKeyEnPwr3 = "en_p3";
+constexpr const char* kKeyEnPwr4 = "en_p4";
+constexpr const char* kKeyEnPwr5 = "en_p5";
+constexpr const char* kKeyEnPwr6 = "en_p6";
 constexpr uint32_t kPlanMagic = 0x504C414Eu;
 /** Bump jen při změně layoutu PlanTydenConfig — ne při změně výchozích hodnot. */
 constexpr uint16_t kPlanVersion = 4;
@@ -494,4 +502,89 @@ void storageSaveBleOutdoorMac(const char* mac) {
     return;
   }
   s_prefs.putString(kKeyBleOutMac, mac);
+}
+
+namespace {
+
+const char* weekPowerKey(int day) {
+  static const char* keys[] = {kKeyEnPwr0, kKeyEnPwr1, kKeyEnPwr2, kKeyEnPwr3,
+                               kKeyEnPwr4, kKeyEnPwr5, kKeyEnPwr6};
+  if (day < 0 || day > 6) {
+    return kKeyEnPwr0;
+  }
+  return keys[day];
+}
+
+}  // namespace
+
+bool storageLoadEnergyMeta(void* dst, size_t len) {
+  if (!dst || len == 0) {
+    return false;
+  }
+  NvsLock lock;
+  ensureOpen();
+  if (!s_prefs.isKey(kKeyEnMeta)) {
+    return false;
+  }
+  const size_t got = s_prefs.getBytesLength(kKeyEnMeta);
+  if (got != len) {
+    return false;
+  }
+  return s_prefs.getBytes(kKeyEnMeta, dst, len) == len;
+}
+
+void storageSaveEnergyMeta(const void* src, size_t len) {
+  if (!src || len == 0) {
+    return;
+  }
+  NvsLock lock;
+  ensureOpen();
+  s_prefs.putBytes(kKeyEnMeta, src, len);
+}
+
+bool storageLoadEnergyWeekPower(uint16_t* dst, size_t count) {
+  if (!dst || count < 7 * 1440) {
+    return false;
+  }
+  NvsLock lock;
+  ensureOpen();
+  bool any = false;
+  for (int d = 0; d < 7; ++d) {
+    const char* key = weekPowerKey(d);
+    uint16_t* day = dst + d * 1440;
+    if (!s_prefs.isKey(key)) {
+      memset(day, 0, 1440 * sizeof(uint16_t));
+      continue;
+    }
+    const size_t want = 1440 * sizeof(uint16_t);
+    if (s_prefs.getBytesLength(key) != want) {
+      memset(day, 0, want);
+      continue;
+    }
+    if (s_prefs.getBytes(key, day, want) == want) {
+      any = true;
+    }
+  }
+  return any;
+}
+
+void storageSaveEnergyWeekPower(const uint16_t* src, size_t count) {
+  if (!src || count < 7 * 1440) {
+    return;
+  }
+  NvsLock lock;
+  ensureOpen();
+  for (int d = 0; d < 7; ++d) {
+    const char* key = weekPowerKey(d);
+    s_prefs.putBytes(key, src + d * 1440, 1440 * sizeof(uint16_t));
+  }
+}
+
+void storageSaveEnergyWeekPowerDay(int dayIndex, const uint16_t* daySamples) {
+  if (!daySamples || dayIndex < 0 || dayIndex > 6) {
+    return;
+  }
+  NvsLock lock;
+  ensureOpen();
+  s_prefs.putBytes(weekPowerKey(dayIndex), daySamples, 1440 * sizeof(uint16_t));
 }

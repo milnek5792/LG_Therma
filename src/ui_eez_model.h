@@ -53,10 +53,12 @@ enum UiAkceTlacitko : uint8_t {
   UI_AKCE_SETTINGS_METER3,
   UI_AKCE_SETTINGS_BLE_MAC,
   UI_AKCE_SETTINGS_BRIDGE_OTA,
+  UI_AKCE_SETTINGS_BRIDGE_DIAG,
   UI_AKCE_BLE_MAC_BACK,
   UI_AKCE_BLE_MAC_SAVE,
   UI_AKCE_SETTINGS_PLAN,
   UI_AKCE_SETTINGS_SERVIS,
+  UI_AKCE_SETTINGS_SPOTREBA,
   UI_AKCE_PLAN_BACK,
   UI_AKCE_PLAN_TOGGLE,
 };
@@ -74,6 +76,7 @@ enum UiAkceTlacitko : uint8_t {
 #define EEZ_VAR_SIG_KOMPRESOR        "sig_kompresor"
 #define EEZ_VAR_SIG_EL_TOPENI        "sig_el_topeni"
 #define EEZ_VAR_SIG_ODMRAZOVANI      "sig_odmrazovani"
+#define EEZ_VAR_SIG_TICHY_LIN        "sig_tichy_lin"
 #define EEZ_VAR_SIG_WIFI             "sig_wifi"
 #define EEZ_VAR_SIG_MQTT             "sig_mqtt"
 #define EEZ_VAR_SIG_BLE              "sig_ble"
@@ -106,6 +109,7 @@ struct UiEezModel {
   bool sig_kompresor;
   bool sig_el_topeni;
   bool sig_odmrazovani;
+  bool sig_tichy_lin;
   bool sig_wifi;
   bool sig_mqtt;
   bool sig_ble;

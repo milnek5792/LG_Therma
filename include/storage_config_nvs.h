@@ -52,6 +52,15 @@ void storageSaveBleRoomMac(const char* mac);
 bool storageLoadBleOutdoorMac(char* mac, size_t len);
 void storageSaveBleOutdoorMac(const char* mac);
 
+/** Blob meta spotřeby (climate_energy EnergyMeta). */
+bool storageLoadEnergyMeta(void* dst, size_t len);
+void storageSaveEnergyMeta(const void* src, size_t len);
+/** Týdenní příkon: count = 7*1440 uint16. */
+bool storageLoadEnergyWeekPower(uint16_t* dst, size_t count);
+void storageSaveEnergyWeekPower(const uint16_t* src, size_t count);
+/** Jen jeden den (0=dnes … 6). daySamples = 1440 × uint16. */
+void storageSaveEnergyWeekPowerDay(int dayIndex, const uint16_t* daySamples);
+
 #ifdef __cplusplus
 }
 #endif

@@ -42,12 +42,13 @@ typedef struct {
   lv_obj_t* lbl_rsp_out;
   lv_obj_t* btn_ble;
   lv_obj_t* btn_mac;
-  lv_obj_t* btn_bridge_ota;
+  lv_obj_t* btn_bridge;
   lv_obj_t* btn_meter1;
   lv_obj_t* btn_meter2;
   lv_obj_t* btn_meter3;
   lv_obj_t* btn_plan;
   lv_obj_t* btn_servis;
+  lv_obj_t* btn_spotreba;
 } settings_objects_t;
 
 extern settings_objects_t settingsObj;

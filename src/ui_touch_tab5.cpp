@@ -8,6 +8,8 @@
 #include "ui_eez_nav.h"
 #include "ui_eez_plan.h"
 #include "ui_eez_regulator.h"
+#include "ui_eez_energy.h"
+#include "ui_eez_bridge_diag.h"
 #include "ui_eez_screens.h"
 #include "ui_eez_settings.h"
 
@@ -98,15 +100,19 @@ lv_obj_t* hitTestObjList(lv_obj_t* const* list, int n, int tx, int ty) {
 }
 
 lv_obj_t* hitTestSettings(int tx, int ty) {
+  if (lv_obj_t* modal = uiBridgeDiagHitTest(tx, ty)) {
+    return modal;
+  }
   lv_obj_t* list[] = {
       settingsObj.btn_back,        settingsObj.btn_wifi_toggle,
       settingsObj.btn_wifi_connect, settingsObj.btn_wifi_edit,
       settingsObj.btn_mqtt_toggle, settingsObj.btn_mqtt_connect,
       settingsObj.btn_ble,         settingsObj.btn_mac,
       settingsObj.btn_meter1,        settingsObj.btn_meter2,
-      settingsObj.btn_meter3,        settingsObj.btn_plan,
-      settingsObj.btn_servis,      settingsObj.btn_sleep,
-      settingsObj.slider_brightness,
+      settingsObj.btn_meter3,        settingsObj.btn_spotreba,
+      settingsObj.btn_plan,        settingsObj.btn_servis,
+      settingsObj.btn_sleep,      settingsObj.slider_brightness,
+      settingsObj.btn_bridge,
   };
   return hitTestObjList(list, (int)(sizeof(list) / sizeof(list[0])), tx, ty);
 }
@@ -159,7 +165,22 @@ lv_obj_t* hitTestRegulator(int tx, int ty) {
   return hitTestObjList(list, (int)(sizeof(list) / sizeof(list[0])), tx, ty);
 }
 
+lv_obj_t* hitTestEnergy(int tx, int ty) {
+  if (!energyObj.screen) {
+    return nullptr;
+  }
+  lv_obj_t* list[] = {
+      energyObj.btn_back,
+      energyObj.btn_day_prev,
+      energyObj.btn_day_next,
+  };
+  return hitTestObjList(list, (int)(sizeof(list) / sizeof(list[0])), tx, ty);
+}
+
 lv_obj_t* hitTestDynamic(int tx, int ty) {
+  if (lv_obj_t* modal = uiBridgeDiagHitTest(tx, ty)) {
+    return modal;
+  }
   if (uiIsSettingsScreen()) {
     return hitTestSettings(tx, ty);
   }
@@ -168,6 +189,9 @@ lv_obj_t* hitTestDynamic(int tx, int ty) {
   }
   if (uiIsRegulatorScreen()) {
     return hitTestRegulator(tx, ty);
+  }
+  if (uiIsEnergyScreen()) {
+    return hitTestEnergy(tx, ty);
   }
   return nullptr;
 }

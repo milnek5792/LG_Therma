@@ -9,7 +9,13 @@
 #include <vector>
 
 #include "bridge_ota.h"
+#include "espnow_energy_config.h"
 #include "h2_uart_protocol.h"
+
+#include <WiFi.h>
+#include <esp_now.h>
+#include <esp_wifi.h>
+#include <esp_idf_version.h>
 
 // XIAO ESP32-C3 D6/D7 — UART k Tab5 (M5-Bus G6/G7)
 #ifndef BRIDGE_TX_PIN
@@ -105,6 +111,9 @@ bool s_ledHbOn = false;
 
 char s_rxLine[96];
 size_t s_rxLen = 0;
+
+bool s_espNowReady = false;
+volatile bool s_espNowNeedReinit = false;
 
 void ledWrite(uint8_t r, uint8_t g, uint8_t b) {
 #if BRIDGE_HAS_STATUS_LED
@@ -391,6 +400,77 @@ void uartPrintf(const char* fmt, ...) {
   vsnprintf(buf, sizeof(buf), fmt, ap);
   va_end(ap);
   uartPrint(buf);
+}
+
+#if defined(ESP_IDF_VERSION_MAJOR) && (ESP_IDF_VERSION_MAJOR >= 5)
+void onEspNowRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
+  (void)info;
+#else
+void onEspNowRecv(const uint8_t* mac, const uint8_t* data, int len) {
+  (void)mac;
+#endif
+  if (!data || len < (int)sizeof(EspNowEnergyPacket)) {
+    return;
+  }
+  EspNowEnergyPacket pkt;
+  memcpy(&pkt, data, sizeof(pkt));
+  if (pkt.magic != ESPNOW_ENERGY_MAGIC) {
+    return;
+  }
+  const float kwh = (float)pkt.energy_wh / 1000.0f;
+  const unsigned resetFlag =
+      (pkt.flags & ESPNOW_ENERGY_FLAG_RESET) ? 1u : 0u;
+  uartPrintf("%sW=%u E=%.3f R=%u\n", H2_PREFIX_PWR, (unsigned)pkt.avg_power_w,
+             (double)kwh, resetFlag);
+  ledPulse(0, kLedDim, 0, 120);
+}
+
+bool espNowEnergyInit(void) {
+  if (s_espNowReady) {
+    return true;
+  }
+
+  // OTA may turn Wi-Fi off (WIFI_OFF) — restore STA + channel for ESP-NOW.
+  if (WiFi.getMode() == WIFI_OFF) {
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect(false, false);
+    delay(20);
+  } else if (WiFi.getMode() != WIFI_STA && WiFi.getMode() != WIFI_AP_STA) {
+    WiFi.mode(WIFI_STA);
+    delay(20);
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    esp_wifi_set_channel(ESPNOW_ENERGY_CHANNEL, WIFI_SECOND_CHAN_NONE);
+  }
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("[ESPNOW] init fail");
+    return false;
+  }
+  if (esp_now_register_recv_cb(onEspNowRecv) != ESP_OK) {
+    Serial.println("[ESPNOW] recv cb fail");
+    esp_now_deinit();
+    return false;
+  }
+  s_espNowReady = true;
+  Serial.printf("[ESPNOW] RX ready ch=%u mac=%s\n",
+                (unsigned)ESPNOW_ENERGY_CHANNEL, WiFi.macAddress().c_str());
+  return true;
+}
+
+void espNowEnergyMarkDirty(void) {
+  if (s_espNowReady) {
+    esp_now_deinit();
+    s_espNowReady = false;
+  }
+  s_espNowNeedReinit = true;
+}
+
+void sendBridgeInfo(void) {
+  uartPrintf("%sMAC=%s CH=%u ESPNOW=%u\n", H2_PREFIX_INFO,
+             WiFi.macAddress().c_str(), (unsigned)ESPNOW_ENERGY_CHANNEL,
+             s_espNowReady ? 1u : 0u);
 }
 
 void mergeRoomReading(const MeterReading& reading, int rssi) {
@@ -813,6 +893,10 @@ void handleCommand(char* line) {
     sendCfg();
     return;
   }
+  if (strcmp(line, H2_CMD_GET_INFO) == 0) {
+    sendBridgeInfo();
+    return;
+  }
   if (strncmp(line, "SET ROOM=", 9) == 0) {
     const char* val = line + 9;
     if (strchr(val, ':') != nullptr) {
@@ -913,6 +997,11 @@ void setup() {
   NimBLEDevice::init("");
   sendCfg();
 
+  // ESP-NOW for PZEM (before BLE scan — Wi-Fi STA + channel)
+  espNowEnergyInit();
+  sendBridgeInfo();
+
+
   // První teploty hned po startu (ne až po intervalu pollu)
   if (s_roomOk || s_outOk) {
     Serial.println("[BLE] boot POLL");
@@ -927,6 +1016,18 @@ void loop() {
   }
 
   bridgeOtaTick();
+
+  // After OTA WIFI OFF, restore ESP-NOW
+  static bool s_wasOtaBusy = false;
+  const bool otaBusy = bridgeOtaWifiBusy();
+  if (s_wasOtaBusy && !otaBusy) {
+    espNowEnergyMarkDirty();
+  }
+  s_wasOtaBusy = otaBusy;
+  if (s_espNowNeedReinit || !s_espNowReady) {
+    s_espNowNeedReinit = false;
+    espNowEnergyInit();
+  }
 
   const uint32_t now = millis();
 

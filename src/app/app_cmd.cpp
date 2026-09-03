@@ -2,6 +2,7 @@
 #include "app_cmd.h"
 
 #include "src/ui_eez_nav.h"
+#include "ui_eez_bridge_diag.h"
 #include "ui_eez_plan.h"
 #include "ui_net_sync.h"
 #include "ui_bus_bindings.h"
@@ -188,6 +189,9 @@ void appCmdDrainUi(void) {
       case UI_AKCE_SETTINGS_BRIDGE_OTA:
         uiNetHandleAction(akce);
         break;
+      case UI_AKCE_SETTINGS_BRIDGE_DIAG:
+        uiBridgeDiagShow();
+        break;
       case UI_AKCE_SETTINGS_BLE_MAC:
         uiNavigateTo(SCREEN_ID_BLE_MAC);
         break;
@@ -202,6 +206,9 @@ void appCmdDrainUi(void) {
         break;
       case UI_AKCE_SETTINGS_SERVIS:
         uiNavigateTo(SCREEN_ID_REGULATOR);
+        break;
+      case UI_AKCE_SETTINGS_SPOTREBA:
+        uiNavigateTo(SCREEN_ID_SPOTREBA);
         break;
       case UI_AKCE_PLAN_BACK:
         uiNavigateTo(SCREEN_ID_SETTINGS);

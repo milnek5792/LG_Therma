@@ -8,6 +8,7 @@
 #include "ui_eez_model.h"
 #include "ui_eez_vars.h"
 #include "climate_room_uart.h"
+#include "ui_eez_bridge_diag.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -81,7 +82,8 @@ lv_obj_t* makeLabel(lv_obj_t* parent, int x, int y, int maxW, const char* text, 
 }
 
 lv_obj_t* makeButton(lv_obj_t* parent, int x, int y, int w, int h,
-                     const char* text, lv_event_cb_t cb, uint32_t bg) {
+                     const char* text, lv_event_cb_t cb, uint32_t bg,
+                     uint32_t fg = 0xFFFFFFu) {
   lv_obj_t* obj = lv_button_create(parent);
   lv_obj_set_pos(obj, x, y);
   lv_obj_set_size(obj, w, h);
@@ -92,7 +94,7 @@ lv_obj_t* makeButton(lv_obj_t* parent, int x, int y, int w, int h,
   lv_obj_add_event_cb(obj, cb, LV_EVENT_CLICKED, nullptr);
   lv_obj_t* lbl = lv_label_create(obj);
   lv_obj_set_style_text_font(lbl, kFont, LV_PART_MAIN | LV_STATE_DEFAULT);
-  lv_obj_set_style_text_color(lbl, lv_color_hex(0xFFFFFFu), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_text_color(lbl, lv_color_hex(fg), LV_PART_MAIN | LV_STATE_DEFAULT);
   lv_label_set_text(lbl, text);
   lv_obj_center(lbl);
   lv_obj_add_flag(lbl, LV_OBJ_FLAG_EVENT_BUBBLE);
@@ -447,9 +449,9 @@ void uiSettingsCreate() {
   settingsObj.btn_mac = makeButton(
       settingsObj.panel_ble, kPad + btnThirdW + kGap, row1Y, btnThirdW, kBtnH,
       "MAC", action_akce_settings_ble_mac, kColAccent);
-  settingsObj.btn_bridge_ota = makeButton(
+  settingsObj.btn_bridge = makeButton(
       settingsObj.panel_ble, kPad + 2 * (btnThirdW + kGap), row1Y, btnThirdW,
-      kBtnH, "OTA", action_akce_settings_bridge_ota, kColGreen);
+      kBtnH, "Bridge", action_akce_settings_bridge_diag, kColGreen);
   settingsObj.btn_meter1 = makeButton(
       settingsObj.panel_ble, kPad, row2Y, pickW, kBtnH,
       "Tepl.1", action_akce_settings_meter1, kColAccent);
@@ -465,12 +467,16 @@ void uiSettingsCreate() {
 
   constexpr int kNavBtnH = 52;
   const int navBtnW = (navColW - kGap) / 2;
-  const int navY = sysH - kPad - kNavBtnH;
+  const int navY2 = sysH - kPad - kNavBtnH;
+  const int navY1 = navY2 - kNavBtnH - kGap * 3;
+  settingsObj.btn_spotreba = makeButton(
+      settingsObj.panel_sys, navColX, navY1, navColW, kNavBtnH,
+      "Spotřeba", action_akce_settings_spotreba, 0x48484Fu, kColOrange);
   settingsObj.btn_plan = makeButton(
-      settingsObj.panel_sys, navColX, navY, navBtnW, kNavBtnH,
-      "Plan", action_akce_settings_plan, kColPurple);
+      settingsObj.panel_sys, navColX, navY2, navBtnW, kNavBtnH,
+      "Plán", action_akce_settings_plan, kColPurple);
   settingsObj.btn_servis = makeButton(
-      settingsObj.panel_sys, navColX + navBtnW + kGap, navY, navBtnW, kNavBtnH,
+      settingsObj.panel_sys, navColX + navBtnW + kGap, navY2, navBtnW, kNavBtnH,
       "Regulátor", action_akce_settings_servis, kColPurple);
 
   strncpy(uiEez.set_sys_hint, "Čekám na H2...", sizeof(uiEez.set_sys_hint) - 1);
@@ -479,6 +485,7 @@ void uiSettingsCreate() {
   updateBrightnessLabel();
   updateSleepLabels();
   updateBlePanelLabels();
+  uiBridgeDiagCreate();
   uiSettingsTick();
 }
 
@@ -486,6 +493,8 @@ void uiSettingsTick() {
   if (!settingsObj.screen) {
     return;
   }
+
+  uiBridgeDiagTick();
 
   char line[80];
 

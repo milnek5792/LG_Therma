@@ -25,9 +25,11 @@ extern void action_akce_settings_meter2(lv_event_t * e);
 extern void action_akce_settings_meter3(lv_event_t * e);
 extern void action_akce_settings_ble_mac(lv_event_t * e);
 extern void action_akce_settings_bridge_ota(lv_event_t * e);
+extern void action_akce_settings_bridge_diag(lv_event_t * e);
 extern void action_akce_settings_plan(lv_event_t * e);
 extern void action_akce_teplota_minus(lv_event_t * e);
 extern void action_akce_settings_servis(lv_event_t * e);
+extern void action_akce_settings_spotreba(lv_event_t * e);
 extern void action_akce_plan_back(lv_event_t * e);
 extern void action_akce_plan_toggle(lv_event_t * e);
 

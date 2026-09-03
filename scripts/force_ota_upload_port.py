@@ -1,5 +1,5 @@
-# PlatformIO: IDE často pošle prázdný --upload-port a přepíše IP z platformio.ini.
-# Tento skript pro env m5stack-tab5-ota vždy nastaví UPLOAD_PORT z ini (nebo fallback).
+# PlatformIO: IDE často pošle prázdný --upload-port / COM a přepíše IP z platformio.ini.
+# Pro OTA env (espota) vždy nastaví UPLOAD_PORT z ini; COM/serial přepíše na IP.
 Import("env")  # type: ignore  # noqa: F821
 
 DEFAULT_IP = "192.168.50.249"
@@ -16,7 +16,7 @@ try:
 except Exception:
     current = ""
 
-# Prázdný / jen whitespace / žádný → IP z ini nebo default
+# Preferuj IP z platformio.ini; jinak fallback (Tab5)
 use = ini_port if ini_port else DEFAULT_IP
 if (not current) or (current.lower() in ("none", "null", "-")):
     env.Replace(UPLOAD_PORT=use)  # type: ignore

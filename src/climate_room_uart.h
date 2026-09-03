@@ -77,6 +77,20 @@ ClimateBridgeOtaState climateRoomBridgeOtaState(void);
 const char* climateRoomBridgeOtaIp(void);
 const char* climateRoomBridgeOtaHost(void);
 
+/** Diagnostika bridge: `GET INFO` → `INFO MAC=… CH=… ESPNOW=…` */
+void climateRoomRequestBridgeInfo(void);
+bool climateRoomBridgeInfoOk(void);
+const char* climateRoomBridgeMac(void);
+uint8_t climateRoomBridgeChannel(void);
+bool climateRoomBridgeEspNowOk(void);
+uint32_t climateRoomBridgeInfoAgeMs(void);
+
+/** Poslední PWR vzorek z UART (pro diagnostiku). */
+bool climateRoomLastPwrOk(void);
+uint16_t climateRoomLastPwrW(void);
+float climateRoomLastPwrKwh(void);
+uint32_t climateRoomLastPwrAgeMs(void);
+
 void climateRoomStatusText(char* buf, size_t buflen);
 
 #ifdef __cplusplus

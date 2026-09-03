@@ -18,6 +18,7 @@
 #include "src/ui_ui_lvgl.h"
 #include "ui_eez_plan.h"
 #include "ui_eez_regulator.h"
+#include "ui_eez_energy.h"
 #endif
 
 static bool predDrzetPanel = false;
@@ -83,6 +84,7 @@ static void lgTaskUi(void* param) {
     uiLvglTick();
     uiNetSyncWifi();
     uiRegulatorTick();
+    uiEnergyTick();
 #else
     if (drzetStavAktivni != predDrzetPanel || cekameNaOrigStart != predCekamePanel) {
       predDrzetPanel = drzetStavAktivni;

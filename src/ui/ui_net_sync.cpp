@@ -4,6 +4,7 @@
 #include "bus_lg_config.h"
 #include "climate_plan.h"
 #include "climate_regulator.h"
+#include "climate_energy.h"
 #include "climate_room.h"
 #if LG_HAS_H2_UART_ROOM
 #include "climate_room_uart.h"
@@ -101,6 +102,7 @@ void netTask(void* /*arg*/) {
     netNtpTick();
     netOtaTick();
     climateRoomTick();
+    climateEnergyTick();
     netMqttTick();
 
     if (now - lastHbMs >= 3000) {
@@ -149,6 +151,7 @@ void uiNetInit(void) {
   climateRoomInit();
   climatePlanInit();
   climateRegulatorInit();
+  climateEnergyInit();
   uiNetSyncWifi();
 }
 

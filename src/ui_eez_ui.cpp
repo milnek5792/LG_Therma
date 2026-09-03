@@ -7,6 +7,7 @@
 #include "ui_eez_ble_mac_form.h"
 #include "ui_eez_plan.h"
 #include "ui_eez_regulator.h"
+#include "ui_eez_energy.h"
 #include "ui_eez_images.h"
 #include "ui_eez_actions.h"
 #include "ui_eez_vars.h"
@@ -37,6 +38,9 @@ static lv_obj_t* getLvglObjectFromIndex(int32_t index) {
   }
   if (index == 5) {
     return uiBleMacFormScreen();
+  }
+  if (index == 6) {
+    return uiEnergyScreen();
   }
   return nullptr;
 }

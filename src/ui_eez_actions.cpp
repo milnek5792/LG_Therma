@@ -107,6 +107,11 @@ void action_akce_settings_bridge_ota(lv_event_t* e) {
   enqueue(UI_AKCE_SETTINGS_BRIDGE_OTA);
 }
 
+void action_akce_settings_bridge_diag(lv_event_t* e) {
+  (void)e;
+  enqueue(UI_AKCE_SETTINGS_BRIDGE_DIAG);
+}
+
 void action_akce_settings_plan(lv_event_t* e) {
   (void)e;
   enqueue(UI_AKCE_SETTINGS_PLAN);
@@ -115,6 +120,11 @@ void action_akce_settings_plan(lv_event_t* e) {
 void action_akce_settings_servis(lv_event_t* e) {
   (void)e;
   enqueue(UI_AKCE_SETTINGS_SERVIS);
+}
+
+void action_akce_settings_spotreba(lv_event_t* e) {
+  (void)e;
+  enqueue(UI_AKCE_SETTINGS_SPOTREBA);
 }
 
 void action_akce_plan_back(lv_event_t* e) {

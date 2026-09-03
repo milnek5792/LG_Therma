@@ -14,6 +14,7 @@ bool uiIsSettingsScreen();
 bool uiIsWifiSetupScreen();
 bool uiIsPlanScreen();
 bool uiIsRegulatorScreen();
+bool uiIsEnergyScreen();
 
 #ifdef __cplusplus
 }
